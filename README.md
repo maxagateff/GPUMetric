@@ -66,15 +66,20 @@ The script dynamically calculates the path to `build/libgpumetric.so`, hooks int
 ## Error Codes Reference
 
 If something breaks, the C library returns negative enums instead of crashing:
-* `0`: `GPU_METRIC_SUCCESS` — All good.
-* `-1`: `GPU_METRIC_ERR_NVML` — NVML failed to init (usually missing or dead driver).
-* `-2`: `GPU_METRIC_ERR_NO_DEVICE` — No NVIDIA cards found.
-* `-3`: `GPU_METRIC_ERR_DEVICE` — Failed to communicate or fetch metrics from hardware.
-* `-4`: `GPU_METRIC_ERR_ARGUMENT` — Passed a NULL pointer to the sampler.
+* `0`: `GPU_METRIC_SUCCESS` - All good.
+* `-1`: `GPU_METRIC_ERR_NVML` - NVML failed to init (usually missing or dead driver).
+* `-2`: `GPU_METRIC_ERR_NO_DEVICE` - No NVIDIA cards found.
+* `-3`: `GPU_METRIC_ERR_DEVICE` - Failed to communicate or fetch metrics from hardware.
+* `-4`: `GPU_METRIC_ERR_ARGUMENT` - Passed a NULL pointer to the sampler.
 
 ---
 
+
+
 ## License
 
-MIT License. Do whatever you want with the code, just don't blame me if your server melts
+This project is licensed under the **GNU General Public License v3 (GPLv3)**.
 
+You are free to use, modify, and redistribute this software, but any derivative works or projects utilizing this library must also be open-source under the same GPLv3 license.
+
+Also, it comes with absolutely no warranty - if your server melts, that's on you.
