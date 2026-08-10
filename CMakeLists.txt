@@ -31,9 +31,9 @@ endif()
 
 # Build the project as a shared library (libgpumetric.so) instead of an executable
 add_library(gpumetric SHARED
-        gpu_metric.c
-        gpu_metric.h
-        logger.h
+        src/gpumetric_core/gpu_metric.c
+        src/gpumetric_core/gpu_metric.h
+        src/gpumetric_core/logger.h
 )
 
 # Link the system NVML library to your shared library

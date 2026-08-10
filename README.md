@@ -282,7 +282,7 @@ Once the library has been successfully built and tested, GPUMetric can be loaded
 A minimal example:
 
 ```python
-from FFI import GPUMetrics
+from src.python_ffi.FFI import GPUMetrics
 
 gpu_metrics = GPUMetrics(
     lib_path="build/libgpumetric.so"
@@ -499,7 +499,7 @@ GPUMetric/
 
 ## Core Components
 
-### `gpu_metric.c` / `gpu_metric.h`
+### `src/gpumetric_core/gpu_metric.c` / `src/gpumetric_core/gpu_metric.h`
 
 The core C implementation and public C API.
 
@@ -512,11 +512,11 @@ Responsible for:
 * memory delta calculation;
 * error handling.
 
-### `logger.h`
+### `src/gpumetric_core/logger.h`
 
 A small set of logging macros used by the C implementation for diagnostics and error reporting.
 
-### `FFI.py`
+### `src/python_ffi/FFI.py`
 
 The Python FFI layer built on top of `ctypes`.
 

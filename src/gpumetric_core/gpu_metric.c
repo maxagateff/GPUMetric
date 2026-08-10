@@ -1,7 +1,7 @@
 // gpumetric.c
 #define _POSIX_C_SOURCE 200809L
 
-#include "gpu_metric.h"
+#include "../../gpu_metric.h"
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>

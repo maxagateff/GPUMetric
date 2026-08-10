@@ -6,7 +6,7 @@ project_root = str(Path(__file__).resolve().parent.parent)
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from FFI import GPUMetrics
+from src.python_ffi.FFI import GPUMetrics
 
 
 def main():
