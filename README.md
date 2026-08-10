@@ -282,7 +282,7 @@ Once the library has been successfully built and tested, GPUMetric can be loaded
 A minimal example:
 
 ```python
-from src.python_ffi.FFI import GPUMetrics
+from src.high_level_piping.FFI import GPUMetrics
 
 gpu_metrics = GPUMetrics(
     lib_path="build/libgpumetric.so"
@@ -516,7 +516,7 @@ Responsible for:
 
 A small set of logging macros used by the C implementation for diagnostics and error reporting.
 
-### `src/python_ffi/FFI.py`
+### `src/high_level_piping/FFI.py`
 
 The Python FFI layer built on top of `ctypes`.
 
