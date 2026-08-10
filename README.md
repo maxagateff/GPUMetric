@@ -183,8 +183,8 @@ If `nvidia-smi` cannot access the GPU, GPUMetric will not be able to initialize 
 On Ubuntu Server, use the project's dependency installation script:
 
 ```bash
-chmod +x install_deps.sh
-./install_deps.sh
+chmod +x scripts/install_deps.sh
+./scripts/install_deps.sh
 ```
 
 After installation, verify that CMake is available:
