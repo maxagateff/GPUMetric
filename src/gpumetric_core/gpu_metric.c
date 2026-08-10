@@ -14,14 +14,17 @@ typedef struct {
     int has_previous_sample;
 } MemoryCache;
 
-static unsigned int device_index;
+
 static nvmlDevice_t device;
 static MemoryCache cache;
 static int initialized = 0;
 
+
 /**
- * Initializes the NVML library and binds to the first available GPU.
- * Returns 0 on success, or a negative error code on failure.
+ * Initializes the NVML library and binds to the specified GPU.
+ *
+ * @param device_index NVIDIA GPU index to monitor.
+ * @return 0 on success, or a negative error code on failure.
  */
 int gpu_metric_init(unsigned int device_index) {
     // Return early if the library has already been initialized
@@ -56,10 +59,9 @@ int gpu_metric_init(unsigned int device_index) {
         return GPU_METRIC_ERR_ARGUMENT;
     }
 
-    index = device_index;
 
-    // Bind to the first GPU (index 0)
-    ret = nvmlDeviceGetHandleByIndex(index, &device);
+    // Bind to the requested GPU
+    ret = nvmlDeviceGetHandleByIndex(device_index, &device);
     if (ret != NVML_SUCCESS) {
         printf("[GPU_METRIC] Failed to get device handle: %s\n", nvmlErrorString(ret));
         nvmlShutdown();
@@ -142,8 +144,7 @@ void gpu_metric_cleanup(void) {
 // - [ ] Clean up NVML state on every initialization failure path.
 // - [ ] Review thread safety of the global core state.
 // - [ ] Consider replacing global state with an opaque `GPUMetricContext`.
-// - [ ] Add explicit multi-GPU/context support if multiple GPU instances are required.
-// - [ ] Consider making the logging mechanism configurable.
+// - [ ] Consider making the logging mechanism configurable. // - [ ] Consider supporting multiple GPU contexts simultaneously.
 // - [ ] Add stronger compiler warnings and treat warnings as errors.
 // - [ ] Add unit/integration tests for initialization, sampling, cleanup, and error paths.
 // - [ ] Test repeated `init -> sample -> cleanup -> init` lifecycle.
