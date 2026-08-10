@@ -7,7 +7,7 @@
 typedef struct {
     uint32_t temp;      /**< GPU temperature in degrees Celsius */
     uint32_t util;      /**< GPU utilization rate as a percentage (0-100) */
-    uint64_t mem_mib;    /**< Current memory usage in Megabytes (MB) */
+    uint64_t mem_mib;    /**< Current memory usage in Megabytes (MIB) */
     int64_t delta_mib;   /**< Memory usage difference compared to the previous sample */
 } GPUStats;
 
@@ -27,7 +27,7 @@ enum {
  * @brief Initializes the NVML library and binds to the first available GPU.
  * @return 0 on success, or a negative error code on failure.
  */
-int gpu_metric_init(void);
+int gpu_metric_init(unsigned int device_index);
 
 /**
  * @brief Samples current GPU metrics and calculates memory consumption delta.

@@ -18,10 +18,10 @@ class GPUMetrics:
     """
     Python wrapper for the C GPU metrics library using ctypes FFI.
     """
-    def __init__(self, lib_path: str):
+    def __init__(self, lib_path: str, device_index: int):
         # Resolve absolute path and load the shared library (.so / .dll)
         resolved_path = str(Path(lib_path).resolve())
-        self.lib = ctypes.CDLL(resolved_path)
+        self.lib = ctypes.CDLL(resolved_path, device_index)
 
         # Configure C function prototypes
         self.lib.gpu_metric_init.argtypes = []

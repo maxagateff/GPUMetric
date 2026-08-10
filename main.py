@@ -1,6 +1,6 @@
 from src.high_level_piping.FFI import GPUMetrics
 
-gpu_metrics = GPUMetrics(lib_path="build/libgpumetric.so")
+gpu_metrics = GPUMetrics(lib_path="build/libgpumetric.so", device_index=0)
 
 ret, stats = gpu_metrics.samples()
 
