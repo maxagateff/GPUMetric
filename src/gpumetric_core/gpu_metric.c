@@ -11,9 +11,8 @@
 
 /* Structure to track historical memory usage for delta calculations */
 typedef struct {
-    uint64_t mem_samples[CACHE_SIZE];
-    int index;
-    int count;
+    uint64_t previous_mem_mib;
+    int has_previous_sample;
 } MemoryCache;
 
 static nvmlDevice_t device;
@@ -70,8 +69,13 @@ int gpu_metric_init(void) {
  * Returns 0 on success, or a negative error code on failure.
  */
 int gpu_metric_sample(GPUStats* out) {
-    if (!initialized || !out) {
+    if (!initialized) {
         return GPU_METRIC_ERR_ARGUMENT;
+    }
+
+    if (!out)
+    {
+        return GPU_METRIC_ERR_NOT_INITIALIZED;
     }
 
     unsigned int temp = 0;
@@ -87,31 +91,26 @@ int gpu_metric_sample(GPUStats* out) {
         return GPU_METRIC_ERR_DEVICE;
 
     // Convert bytes to megabytes
-    uint64_t current_mb = mem.used / (1024ULL * 1024ULL);
-    long delta = 0;
+    uint64_t current_mib = mem.used / (1024ULL * 1024ULL);
+    int64_t delta = 0;
 
     // Calculate memory delta using the previous sample from the ring buffer
-    if (cache.count > 0) {
-        int prev = (cache.index - 1 + CACHE_SIZE) % CACHE_SIZE;
-        uint64_t prev_mb = cache.mem_samples[prev];
+    uint64_t delta_mib = 0;
 
-        delta = (current_mb >= prev_mb)
-            ? (long)(current_mb - prev_mb)
-            : -(long)(prev_mb - current_mb);
+    if (cache.has_previous_sample)
+    {
+        delta_mib = (int64_t)current_mib - (int64_t)cache.previous_mem_mib;
     }
 
-    // Store the current sample in the ring buffer
-    cache.mem_samples[cache.index] = current_mb;
-    cache.index = (cache.index + 1) % CACHE_SIZE;
-    if (cache.count < CACHE_SIZE) {
-        cache.count++;
-    }
+    cache.previous_mem_mib = current_mib;
+    cache.has_previous_sample = 1;
+
 
     // Populate the output structure
     out->temp = temp;
     out->util = util.gpu;
-    out->mem_mb = current_mb;
-    out->delta_mb = delta;
+    out->mem_mib = current_mib;
+    out->delta_mib = delta;
 
     return GPU_METRIC_SUCCESS;
 }
@@ -124,4 +123,6 @@ void gpu_metric_cleanup(void) {
         nvmlShutdown();
         initialized = 0;
     }
+
+    memset(&cache, 0. sizeof(cache));
 }
