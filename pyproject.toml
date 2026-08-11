@@ -40,7 +40,7 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = ""
+Homepage = "https://github.com/maxagateff/GPUMetric"
 Repository = "https://github.com/maxagateff/GPUMetric"
 Issues = "https://github.com/maxagateff/GPUMetric/issues"
 
