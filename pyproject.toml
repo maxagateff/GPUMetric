@@ -1,0 +1,67 @@
+[build-system]
+requires = [
+    "setuptools>=75",
+    "wheel",
+]
+build-backend = "build_backend"
+
+
+[project]
+name = "gpumetric"
+version = "0.0.1"
+description = "Lightweight NVIDIA GPU metrics library for Python"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+
+authors = [
+    { name = "Max Agatev" }
+]
+
+keywords = [
+    "gpu",
+    "nvidia",
+    "nvml",
+    "pytorch",
+    "machine-learning",
+    "metrics",
+    "monitoring",
+]
+
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: C",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: System :: Monitoring",
+]
+
+dependencies = []
+
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+
+[tool.setuptools.package-data]
+gpumetric = [
+    "lib/*.so",
+]
+
+
+[tool.setuptools.exclude-package-data]
+gpumetric = [
+    "*.c",
+    "*.h",
+]

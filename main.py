@@ -1,15 +1,15 @@
-from src.high_level_piping.FFI import GPUMetrics
+from gpumetric import GPUMetrics
 
-gpu_metrics = GPUMetrics(lib_path="build/libgpumetric.so", device_index=0)
+gpu = GPUMetrics(
+    lib_path="build/libgpumetric.so",
+    device_index=0,
+)
 
-ret, stats = gpu_metrics.samples()
+stats = gpu.samples()
 
-if ret == 0:
-    print(
-        f"Temperature: {stats.temp}C | "
-        f"Util: {stats.util}% | "
-        f"Memory: {stats.mem_mb}MiB | "
-        f"Delta Memory: {stats.delta_mb}MiB"
-    )
-else:
-    print(f"GPU metric collection failed: {ret}")
+print(stats.temp)
+print(stats.util)
+print(stats.mem_mb)
+print(stats.delta_mb)
+
+gpu.cleanup()
