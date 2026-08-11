@@ -1,6 +1,4 @@
-from pathlib import Path
-
-from ._ffi import GPUStates, GPUMetricFFI
+from ._ffi import GPUState, GPUMetricFFI
 
 
 class GPUMetrics:
@@ -8,8 +6,13 @@ class GPUMetrics:
     High-level Python interface for NVIDIA GPU metrics.
     """
 
-    def __init__(self, lib_path: str, device_index: int = 0):
+    def __init__(
+        self,
+        device_index: int = 0,
+        lib_path: str | None = None,
+    ) -> None:
         self._ffi = GPUMetricFFI(lib_path)
+        self._initialized = False
 
         ret = self._ffi.init(device_index)
 
@@ -18,7 +21,9 @@ class GPUMetrics:
                 f"gpu_metric_init failed with error code: {ret}"
             )
 
-    def samples(self) -> GPUState:
+        self._initialized = True
+
+    def sample(self) -> GPUState:
         """
         Sample the current GPU metrics.
 
@@ -30,6 +35,11 @@ class GPUMetrics:
             RuntimeError: If the native library fails to sample
             GPU metrics.
         """
+
+        if not self._initialized:
+            raise RuntimeError(
+                "GPUMetrics is not initialized"
+            )
 
         stats = GPUState()
 
@@ -44,13 +54,30 @@ class GPUMetrics:
 
     def cleanup(self) -> None:
         """
-        Explicitly release the native GPUMetric resources.
+        Explicitly release native GPUMetric resources.
         """
 
-        self._ffi.cleanup()
+        if self._initialized:
+            self._ffi.cleanup()
+            self._initialized = False
 
     def __enter__(self) -> "GPUMetrics":
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback) -> None:
+    def __exit__(
+        self,
+        exc_type,
+        exc_value,
+        traceback,
+    ) -> None:
         self.cleanup()
+
+    def __del__(self) -> None:
+        """
+        Best-effort cleanup when the object is garbage-collected.
+        """
+
+        try:
+            self.cleanup()
+        except Exception:
+            pass

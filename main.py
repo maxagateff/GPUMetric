@@ -1,15 +1,12 @@
 from gpumetric import GPUMetrics
 
-gpu = GPUMetrics(
-    lib_path="build/libgpumetric.so",
-    device_index=0,
-)
+gpu = GPUMetrics(device_index=0)
 
-stats = gpu.samples()
+stats = gpu.sample()
 
-print(stats.temp)
-print(stats.util)
-print(stats.mem_mb)
-print(stats.delta_mb)
+print(f"Temperature: {stats.temp} °C")
+print(f"Utilization: {stats.util} %")
+print(f"Memory:      {stats.mem_mib} MiB")
+print(f"Memory Δ:    {stats.delta_mib} MiB")
 
 gpu.cleanup()

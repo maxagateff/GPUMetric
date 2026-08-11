@@ -1,68 +1,53 @@
 [build-system]
 requires = [
-    "setuptools>=75",
-    "wheel",
+    "scikit-build-core>=0.11"
 ]
-build-backend = "build_backend"
-backend-path = ["."]
+build-backend = "scikit_build_core.build"
 
 
 [project]
 name = "gpumetric"
 version = "0.0.1"
+
 description = "Lightweight NVIDIA GPU metrics library for Python"
+
 readme = "README.md"
+
 requires-python = ">=3.10"
-license = "GPL-3.0-only"
 
 authors = [
-    { name = "Max Agatev" }
+    { name = "Max Agatev", email = "agatiev.max@gmail.com" }
 ]
 
-keywords = [
-    "gpu",
-    "nvidia",
-    "nvml",
-    "pytorch",
-    "machine-learning",
-    "metrics",
-    "monitoring",
-]
+license = { text = "GNU General Public License v3.0" }
 
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+
     "Programming Language :: C",
-    "Operating System :: POSIX :: Linux",
+
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: System :: Monitoring",
 ]
 
-dependencies = []
+[project.urls]
+Homepage = "https://github.com/maxagatev/GPUMetric"
+Repository = "https://github.com/maxagatev/GPUMetric"
+Issues = "https://github.com/maxagatev/GPUMetric/issues"
 
 
-[tool.setuptools]
-package-dir = { "" = "src" }
+[tool.scikit-build]
+wheel.packages = ["src/gpumetric"]
 
 
-[tool.setuptools.packages.find]
-where = ["src"]
-
-
-[tool.setuptools.package-data]
-gpumetric = [
-    "lib/*.so",
-]
-
-
-[tool.setuptools.exclude-package-data]
-gpumetric = [
-    "*.c",
-    "*.h",
-]
+[tool.scikit-build.cmake]
+build-type = "Release"
