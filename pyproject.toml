@@ -1,0 +1,53 @@
+[build-system]
+requires = [
+    "scikit-build-core>=0.11"
+]
+build-backend = "scikit_build_core.build"
+
+
+[project]
+name = "gpumetric"
+version = "0.0.1"
+
+description = "Lightweight NVIDIA GPU metrics library for Python"
+
+readme = "README.md"
+
+requires-python = ">=3.10"
+
+authors = [
+    { name = "Max Agateff"}
+]
+
+license = { text = "GNU General Public License v3.0" }
+
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+
+    "Programming Language :: C",
+
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: System :: Monitoring",
+]
+
+[project.urls]
+Homepage = ""
+Repository = "https://github.com/maxagateff/GPUMetric"
+Issues = "https://github.com/maxagateff/GPUMetric/issues"
+
+
+[tool.scikit-build]
+wheel.packages = ["src/gpumetric"]
+
+
+[tool.scikit-build.cmake]
+build-type = "Release"

@@ -784,6 +784,26 @@ Application
 
 This keeps the library focused on collecting GPU state while leaving storage, aggregation, visualization, alerting, and observability decisions to the application.
 
+---
+
+```text
+NVIDIA NVML
+     │
+     ▼
+     C
+     │
+     ▼
+   C ABI
+     │
+     ▼
+ Python FFI
+     │
+     ▼
+ML / DL application
+```
+
+---
+
 # Current Status
 
 GPUMetric should currently be considered **pre-release software**.
