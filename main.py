@@ -1,12 +1,11 @@
 from gpumetric import GPUMetrics
 
-gpu = GPUMetrics(device_index=0)
+while True:
 
-stats = gpu.sample()
+    with GPUMetrics(device_index=0) as gpu_metrics:
+        stats = gpu_metrics.sample()
 
-print(f"Temperature: {stats.temp} °C")
-print(f"Utilization: {stats.util} %")
-print(f"Memory:      {stats.mem_mib} MiB")
-print(f"Memory Δ:    {stats.delta_mib} MiB")
-
-gpu.cleanup()
+        print(f"Temperature: {stats.temperature} °C")
+        print(f"Utilization: {stats.utilization}%")
+        print(f"Memory: {stats.memory_mib} MiB")
+        print(f"Memory delta: {stats.memory_delta_mib} MiB")

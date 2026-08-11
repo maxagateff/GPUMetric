@@ -38,7 +38,7 @@ class GPUMetricFFI:
         if not resolved_path.is_file():
             raise FileNotFoundError(f"GPUMetric native library not found: {resolved_path}")
 
-        self._lib = ctypes.CDDL(str(resolved_path))
+        self._lib = ctypes.CDLL(str(resolved_path))
 
         self._configure_api()
 
