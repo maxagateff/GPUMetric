@@ -16,7 +16,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 
 authors = [
-    { name = "Max Agatev", email = "agatiev.max@gmail.com" }
+    { name = "Max Agateff"}
 ]
 
 license = { text = "GNU General Public License v3.0" }
@@ -40,9 +40,9 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/maxagatev/GPUMetric"
-Repository = "https://github.com/maxagatev/GPUMetric"
-Issues = "https://github.com/maxagatev/GPUMetric/issues"
+Homepage = ""
+Repository = "https://github.com/maxagateff/GPUMetric"
+Issues = "https://github.com/maxagateff/GPUMetric/issues"
 
 
 [tool.scikit-build]

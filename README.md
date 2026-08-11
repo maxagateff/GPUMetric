@@ -786,43 +786,6 @@ This keeps the library focused on collecting GPU state while leaving storage, ag
 
 ---
 
-# Roadmap
-
-The project is currently under active development.
-
-Planned areas include:
-
-### Python API and distribution
-
-* [ ] Improve the public Python API
-* [ ] Introduce a stable Python package layout
-* [ ] Add `pyproject.toml`
-* [ ] Build Python wheels
-* [ ] Publish releases to PyPI
-* [ ] Provide a simple `pip install gpumetric` workflow
-
-### Testing and engineering
-
-* [ ] Expand automated tests
-* [ ] Separate unit and GPU-dependent integration tests
-* [ ] Add continuous integration
-* [ ] Add reproducible release builds
-* [ ] Add performance benchmarks
-
-### GPU functionality
-
-* [ ] Multi-GPU support
-* [ ] Explicit GPU selection
-* [ ] Additional NVML metrics
-
-### Integrations
-
-* [ ] Prometheus integration
-* [ ] OpenTelemetry integration
-* [ ] Additional FFI bindings
-
-The core architecture is expected to remain intentionally small:
-
 ```text
 NVIDIA NVML
      │
