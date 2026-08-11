@@ -1,122 +1,252 @@
-// gpumetric.c
 #define _POSIX_C_SOURCE 200809L
 
 #include "gpu_metric.h"
-#include <stdio.h>
+
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
+
 #include <nvml.h>
 
-
-/* Structure to track historical memory usage for delta calculations */
+/*
+ * Historical GPU memory state used to calculate
+ * the difference between consecutive samples.
+ */
 typedef struct {
     uint64_t previous_mem_mib;
     int has_previous_sample;
 } MemoryCache;
 
-
+/*
+ * Native GPUMetric state.
+ *
+ * The current implementation intentionally keeps a single
+ * process-wide GPU context.
+ */
 static nvmlDevice_t device;
 static MemoryCache cache;
 static int initialized = 0;
 
 
-/**
- * Initializes the NVML library and binds to the specified GPU.
- *
- * @param device_index NVIDIA GPU index to monitor.
- * @return 0 on success, or a negative error code on failure.
+/*
+ * Initialize NVML and bind to the requested NVIDIA GPU.
  */
-int gpu_metric_init(unsigned int device_index) {
-    // Return early if the library has already been initialized
+int gpu_metric_init(unsigned int device_index)
+{
+    /*
+     * Initialization is idempotent for the current context.
+     *
+     * If the library is already initialized, do not call
+     * nvmlInit() a second time.
+     */
     if (initialized) {
         return GPU_METRIC_SUCCESS;
     }
 
     nvmlReturn_t ret = nvmlInit();
+
     if (ret != NVML_SUCCESS) {
-        printf("[GPU_METRIC] nvmlInit failed: %s\n", nvmlErrorString(ret));
+        fprintf(
+            stderr,
+            "[GPUMETRIC] nvmlInit failed: %s\n",
+            nvmlErrorString(ret)
+        );
+
         return GPU_METRIC_ERR_NVML;
     }
 
+    /*
+     * Query the number of NVIDIA devices.
+     */
     unsigned int count = 0;
+
     ret = nvmlDeviceGetCount(&count);
+
     if (ret != NVML_SUCCESS) {
-        printf("[GPU_METRIC] Failed to get device count: %s\n", nvmlErrorString(ret));
+        fprintf(
+            stderr,
+            "[GPUMETRIC] nvmlDeviceGetCount failed: %s\n",
+            nvmlErrorString(ret)
+        );
+
+        /*
+         * NVML was successfully initialized, so it must
+         * be shut down before returning.
+         */
         nvmlShutdown();
-        return GPU_METRIC_ERR_NO_DEVICE;
+
+        return GPU_METRIC_ERR_NVML;
     }
 
+    /*
+     * NVML is available, but there are no NVIDIA GPUs.
+     */
     if (count == 0) {
-        printf("[GPU_METRIC] No GPUs found on the system\n");
+        fprintf(
+            stderr,
+            "[GPUMETRIC] No compatible NVIDIA GPUs detected\n"
+        );
+
         nvmlShutdown();
+
         return GPU_METRIC_ERR_NO_DEVICE;
     }
 
-    if (device_index >= count)
-    {
-        fprintf(stderr, "[GPU_METRIC] Invalid GPU index: %u (available GPUs: %u)\n", device_index, count);
+    /*
+     * Validate the requested GPU index.
+     */
+    if (device_index >= count) {
+        fprintf(
+            stderr,
+            "[GPUMETRIC] Invalid GPU index: %u "
+            "(available GPUs: %u)\n",
+            device_index,
+            count
+        );
+
         nvmlShutdown();
+
         return GPU_METRIC_ERR_ARGUMENT;
     }
 
+    /*
+     * Resolve the NVML device handle.
+     */
+    ret = nvmlDeviceGetHandleByIndex(
+        device_index,
+        &device
+    );
 
-    // Bind to the requested GPU
-    ret = nvmlDeviceGetHandleByIndex(device_index, &device);
     if (ret != NVML_SUCCESS) {
-        printf("[GPU_METRIC] Failed to get device handle: %s\n", nvmlErrorString(ret));
+        fprintf(
+            stderr,
+            "[GPUMETRIC] nvmlDeviceGetHandleByIndex failed: %s\n",
+            nvmlErrorString(ret)
+        );
+
         nvmlShutdown();
+
         return GPU_METRIC_ERR_DEVICE;
     }
 
-    // Reset sampling state and set initialization flag
+    /*
+     * Reset sampling state.
+     *
+     * The first sample after initialization has no previous
+     * sample, therefore its memory delta is zero.
+     */
     memset(&cache, 0, sizeof(cache));
+
     initialized = 1;
 
     return GPU_METRIC_SUCCESS;
 }
 
-/**
- * Samples current GPU metrics and calculates memory consumption delta.
- * Returns 0 on success, or a negative error code on failure.
+
+/*
+ * Sample current GPU metrics.
  */
-int gpu_metric_sample(GPUStats* out) {
+int gpu_metric_sample(GPUStats *out)
+{
     if (!initialized) {
         return GPU_METRIC_ERR_NOT_INITIALIZED;
     }
 
-    if (!out)
-    {
+    if (out == NULL) {
         return GPU_METRIC_ERR_ARGUMENT;
     }
 
     unsigned int temp = 0;
+
     nvmlUtilization_t util;
     nvmlMemory_t mem;
 
-    // Fetch hardware metrics via NVML
-    if (nvmlDeviceGetTemperature(device, NVML_TEMPERATURE_GPU, &temp) != NVML_SUCCESS)
-        return GPU_METRIC_ERR_DEVICE;
-    if (nvmlDeviceGetUtilizationRates(device, &util) != NVML_SUCCESS)
-        return GPU_METRIC_ERR_DEVICE;
-    if (nvmlDeviceGetMemoryInfo(device, &mem) != NVML_SUCCESS)
-        return GPU_METRIC_ERR_DEVICE;
+    /*
+     * GPU temperature.
+     */
+    nvmlReturn_t ret = nvmlDeviceGetTemperature(
+        device,
+        NVML_TEMPERATURE_GPU,
+        &temp
+    );
 
-    // Convert bytes to mebibytes
-    uint64_t current_mib = mem.used / (1024ULL * 1024ULL);
+    if (ret != NVML_SUCCESS) {
+        fprintf(
+            stderr,
+            "[GPUMETRIC] nvmlDeviceGetTemperature failed: %s\n",
+            nvmlErrorString(ret)
+        );
 
-    // Calculate memory delta using the previous sample
-    int64_t delta_mib = 0;
-
-    if (cache.has_previous_sample)
-    {
-        delta_mib = (int64_t)current_mib - (int64_t)cache.previous_mem_mib;
+        return GPU_METRIC_ERR_DEVICE;
     }
 
+    /*
+     * GPU utilization.
+     */
+    ret = nvmlDeviceGetUtilizationRates(
+        device,
+        &util
+    );
+
+    if (ret != NVML_SUCCESS) {
+        fprintf(
+            stderr,
+            "[GPUMETRIC] nvmlDeviceGetUtilizationRates failed: %s\n",
+            nvmlErrorString(ret)
+        );
+
+        return GPU_METRIC_ERR_DEVICE;
+    }
+
+    /*
+     * GPU memory information.
+     */
+    ret = nvmlDeviceGetMemoryInfo(
+        device,
+        &mem
+    );
+
+    if (ret != NVML_SUCCESS) {
+        fprintf(
+            stderr,
+            "[GPUMETRIC] nvmlDeviceGetMemoryInfo failed: %s\n",
+            nvmlErrorString(ret)
+        );
+
+        return GPU_METRIC_ERR_DEVICE;
+    }
+
+    /*
+     * NVML reports memory in bytes.
+     *
+     * Convert bytes -> MiB.
+     */
+    uint64_t current_mib =
+        mem.used / (1024ULL * 1024ULL);
+
+    /*
+     * Calculate signed memory delta.
+     *
+     * A negative value is valid when GPU memory usage decreases.
+     */
+    int64_t delta_mib = 0;
+
+    if (cache.has_previous_sample) {
+        delta_mib =
+            (int64_t) current_mib -
+            (int64_t) cache.previous_mem_mib;
+    }
+
+    /*
+     * Update historical state only after all NVML calls
+     * have succeeded.
+     */
     cache.previous_mem_mib = current_mib;
     cache.has_previous_sample = 1;
 
-
-    // Populate the output structure
+    /*
+     * Populate the public C structure.
+     */
     out->temp = temp;
     out->util = util.gpu;
     out->mem_mib = current_mib;
@@ -125,30 +255,36 @@ int gpu_metric_sample(GPUStats* out) {
     return GPU_METRIC_SUCCESS;
 }
 
-/**
- * Shuts down NVML and releases resources.
+
+/*
+ * Shut down NVML and release native state.
  */
-void gpu_metric_cleanup(void) {
+void gpu_metric_cleanup(void)
+{
+    /*
+     * cleanup() is intentionally idempotent.
+     *
+     * Calling cleanup() on an already-cleaned-up context
+     * is safe.
+     */
     if (initialized) {
         nvmlShutdown();
         initialized = 0;
     }
 
+    /*
+     * Always reset sampling state.
+     *
+     * This guarantees that a later init() starts a completely
+     * new sampling sequence.
+     */
     memset(&cache, 0, sizeof(cache));
+
+    /*
+     * Clear the device handle as well.
+     *
+     * nvmlDevice_t is an opaque NVML handle, so zeroing it
+     * is only used here as local state hygiene.
+     */
+    memset(&device, 0, sizeof(device));
 }
-//TODO Core
-//- [ ] Replace `printf()` with `fprintf(stderr, ...)` for library diagnostics.
-// - [ ] Preserve and report `nvmlReturn_t` errors from metric sampling.
-// - [ ] Use `nvmlErrorString()` for detailed NVML diagnostics.
-// - [ ] Fix `GPU_METRIC_ERR_NO_DEVICE` semantics when `nvmlDeviceGetCount()` itself fails.
-// - [ ] Clean up NVML state on every initialization failure path.
-// - [ ] Review thread safety of the global core state.
-// - [ ] Consider replacing global state with an opaque `GPUMetricContext`.
-// - [ ] Consider making the logging mechanism configurable. // - [ ] Consider supporting multiple GPU contexts simultaneously.
-// - [ ] Add stronger compiler warnings and treat warnings as errors.
-// - [ ] Add unit/integration tests for initialization, sampling, cleanup, and error paths.
-// - [ ] Test repeated `init -> sample -> cleanup -> init` lifecycle.
-// - [ ] Test invalid GPU indices.
-// - [ ] Test systems with zero NVIDIA GPUs.
-// - [ ] Test negative memory deltas.
-//TODO End

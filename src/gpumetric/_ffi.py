@@ -58,11 +58,13 @@ class GPUMetricFFI:
 
     def init(self, device_index: int) -> int:
         """
-        initialize the native GPUMetric library for a specific gpu
+        Initialize the native GPUMetric library for a specific GPU.
         """
+        if not isinstance(device_index, int):
+            raise TypeError("device_index must be an integer")
 
         if device_index < 0:
-            raise ValueError(f"device_index must be not-negative: {device_index}")
+            raise ValueError("device_index must be non-negative")
 
         return self._lib.gpu_metric_init(ctypes.c_uint(device_index))
 
