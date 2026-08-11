@@ -33,20 +33,19 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-
           sudo apt-get install -y \
             build-essential \
             cmake \
             libnvidia-ml-dev
 
-      - name: Verify NVML headers
+      - name: Verify NVML installation
         run: |
-          echo "Searching for nvml.h..."
+          echo "Installed NVML development package:"
+          dpkg -L libnvidia-ml-dev
 
-          dpkg -L libnvidia-ml-dev | grep -E '/nvml\.h$' || {
-            echo "ERROR: nvml.h was not installed."
-            exit 1
-          }
+          echo
+          echo "Searching for nvml.h:"
+          dpkg -L libnvidia-ml-dev | grep '/nvml\.h$'
 
       - name: Install Python build dependencies
         run: |
@@ -59,7 +58,7 @@ jobs:
 
       - name: Verify distributions
         run: |
-          echo "Release distributions:"
+          echo "Built distributions:"
           ls -lah dist/
 
       - name: Upload distributions
@@ -88,13 +87,14 @@ jobs:
           name: release-dists
           path: dist/
 
-      - name: Verify downloaded distributions
+      - name: Verify distributions
         run: |
-          echo "Distributions to publish:"
           ls -lah dist/
 
-      - name: Publish release distributions to PyPI
+      - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
+
+
 
