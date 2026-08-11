@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from ._ffi import GPUState, GPUMetricFFI
+from ._ffi import GPUStates, GPUMetricFFI
 from .exceptions import (
     GPUMetricArgumentError,
     GPUMetricDeviceError,
@@ -131,7 +131,7 @@ class GPUMetrics:
                 "GPUMetrics is not initialized"
             )
 
-        state = GPUState()
+        state = GPUStates()
 
         ret = self._ffi.sample(state)
 
@@ -159,7 +159,7 @@ class GPUMetrics:
 
         return GPUStats(
             temperature=state.temp,
-            utilization=state.util,
+            utilization=state.utils,
             memory_mib=state.mem_mib,
             memory_delta_mib=state.delta_mib,
         )
