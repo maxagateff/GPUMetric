@@ -118,6 +118,6 @@ set_target_properties(
 # ---------------------------------------------------------
 
 install(
-        TARGETS gpumetric
-        LIBRARY DESTINATION lib
+    TARGETS gpumetric
+    LIBRARY DESTINATION gpumetric/lib
 )
