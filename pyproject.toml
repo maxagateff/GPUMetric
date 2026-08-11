@@ -16,13 +16,14 @@ readme = "README.md"
 requires-python = ">=3.10"
 
 authors = [
-    { name = "Max Agateff"}
+    { name = "Max Agateff" }
 ]
 
-license = { text = "GNU General Public License v3.0" }
+license = { file = "LICENSE" }
 
 classifiers = [
     "Development Status :: 3 - Alpha",
+
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
 
@@ -35,9 +36,12 @@ classifiers = [
 
     "Programming Language :: C",
 
+    "Operating System :: POSIX :: Linux",
+
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: System :: Monitoring",
 ]
+
 
 [project.urls]
 Homepage = "https://github.com/maxagateff/GPUMetric"
