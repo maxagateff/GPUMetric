@@ -1,0 +1,8 @@
+include build_backend.py
+include CMakeLists.txt
+include LICENSE
+include README.md
+
+recursive-include src/gpumetric *.py
+recursive-include src/gpumetric_core *.c *.h
+recursive-include tests *.py
