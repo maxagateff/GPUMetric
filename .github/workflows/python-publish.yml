@@ -5,11 +5,11 @@
 # They are provided by a third-party and are governed by
 # separate terms of service, privacy policy, and support
 # documentation.
-
 name: Upload Python Package
 
 on:
-  release:
+  push:
+  pull_request:
     types: [published]
 
 permissions:
@@ -39,21 +39,21 @@ jobs:
           CIBW_BUILD: cp311-manylinux_x86_64
           CIBW_ARCHS_LINUX: x86_64
         run: |
-          python -m cibuildwheel --output-dir wheelhouse
+          python -m cibuildwheel --output-dir dist/
 
       - name: Build source distribution
         run: |
-          python -m build --sdist --outdir wheelhouse
+          python -m build --sdist --outdir dist/
 
       - name: Verify distributions
         run: |
-          ls -lah wheelhouse/
+          ls -lah dist/
 
       - name: Upload distributions
         uses: actions/upload-artifact@v4
         with:
           name: release-dists
-          path: wheelhouse/
+          path: dist/
           if-no-files-found: error
 
   pypi-publish:
@@ -62,7 +62,7 @@ jobs:
     needs: release-build
 
     permissions:
-      id-token: write
+      id-token: write  # Crucial for Trusted Publishing OIDC
 
     environment:
       name: pypi
@@ -75,7 +75,7 @@ jobs:
           name: release-dists
           path: dist/
 
-      - name: Verify distributions
+      - name: Verify distributions before publishing
         run: |
           ls -lah dist/
 
@@ -83,4 +83,3 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
-
