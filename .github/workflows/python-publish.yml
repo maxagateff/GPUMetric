@@ -40,17 +40,29 @@ jobs:
           CIBW_BUILD_VERBOSITY: 1
 
           CIBW_BEFORE_ALL_LINUX: |
-            sudo dnf update -y && sudo dnf install -y \
+            set -eux
+
+            sudo dnf update -y
+            sudo dnf install -y \
                 @development-tools \
                 cmake \
-                nvidia-ml-py
-            
-            echo "Checking for NVML development package files:"
-            rpm -ql cuda-nvml-dev-12-6 2>/dev/null || rpm -ql nvidia-ml-py 2>/dev/null
+                findutils \
+                rpm
+
+            echo "=== OS ==="
+            cat /etc/os-release
 
             echo
-            echo "Searching for nvml.h:"
-            find /usr -name "nvml.h" 2>/dev/null
+            echo "=== Searching DNF for NVML ==="
+            sudo dnf search nvml || true
+
+            echo
+            echo "=== Searching installed RPM packages ==="
+            rpm -qa | grep -Ei 'nvidia|cuda|nvml' || true
+
+            echo
+            echo "=== Searching for nvml.h ==="
+            find /usr /opt -name "nvml.h" 2>/dev/null || true
 
         run: |
           python -m cibuildwheel --output-dir dist/
