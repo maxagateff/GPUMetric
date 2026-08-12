@@ -7,7 +7,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "gpumetric"
-version = "0.0.1"
+version = "0.1.0"
 
 description = "Lightweight NVIDIA GPU metrics library for Python"
 
@@ -45,7 +45,6 @@ classifiers = [
 [project.urls]
 Homepage = "https://github.com/maxagateff/GPUMetric"
 Repository = "https://github.com/maxagateff/GPUMetric"
-Issues = "https://github.com/maxagateff/GPUMetric/issues"
 
 
 [tool.scikit-build]
