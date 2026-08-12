@@ -33,7 +33,8 @@ jobs:
           CIBW_BUILD_VERBOSITY: 1
           CIBW_BEFORE_ALL_LINUX: |
             dnf install -y wget
-            wget -P /usr/include/ https://githubusercontent.com
+            wget -O /usr/include/nvml.h \
+              https://raw.githubusercontent.com/NVIDIA/nvidia-settings/master/src/nvml.h
         run: |
           python -m cibuildwheel --output-dir dist/
 
