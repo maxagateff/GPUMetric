@@ -42,8 +42,8 @@ jobs:
           CIBW_BEFORE_ALL_LINUX: |
             set -eux
 
-            sudo dnf update -y
-            sudo dnf install -y \
+            dnf update -y
+            dnf install -y \
                 @development-tools \
                 cmake \
                 findutils \
@@ -54,7 +54,7 @@ jobs:
 
             echo
             echo "=== Searching DNF for NVML ==="
-            sudo dnf search nvml || true
+            dnf search nvml || true
 
             echo
             echo "=== Searching installed RPM packages ==="
