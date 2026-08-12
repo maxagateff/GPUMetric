@@ -1,16 +1,8 @@
-# This workflow will upload a Python Package to PyPI when a release is created
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python#publishing-to-package-registries
-
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
 name: Upload Python Package
 
 on:
   push:
   pull_request:
-    types: [published]
 
 permissions:
   contents: read
@@ -29,23 +21,6 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            cmake \
-            libnvidia-ml-dev
-
-      - name: Verify NVML installation
-        run: |
-          echo "Installed NVML development package:"
-          dpkg -L libnvidia-ml-dev
-                
-          echo
-          ec  ho "Searching for nvml.h:"
-          dpkg -L libnvidia-ml-dev | grep '/nvml\.h$'
-
       - name: Install build dependencies
         run: |
           python -m pip install --upgrade pip
@@ -56,6 +31,9 @@ jobs:
           CIBW_BUILD: cp311-manylinux_x86_64
           CIBW_ARCHS_LINUX: x86_64
           CIBW_BUILD_VERBOSITY: 1
+          CIBW_BEFORE_ALL_LINUX: |
+            dnf install -y wget
+            wget -P /usr/include/ https://githubusercontent.com
         run: |
           python -m cibuildwheel --output-dir dist/
 
@@ -80,7 +58,7 @@ jobs:
     needs: release-build
 
     permissions:
-      id-token: write  # Crucial for Trusted Publishing OIDC
+      id-token: write
 
     environment:
       name: pypi
