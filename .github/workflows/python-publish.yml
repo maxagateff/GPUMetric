@@ -31,10 +31,12 @@ jobs:
           CIBW_BUILD: cp311-manylinux_x86_64
           CIBW_ARCHS_LINUX: x86_64
           CIBW_BUILD_VERBOSITY: 1
+
           CIBW_BEFORE_ALL_LINUX: |
             dnf install -y wget
             wget -O /usr/include/nvml.h \
-              https://raw.githubusercontent.com/NVIDIA/nvidia-settings/master/src/nvml.h
+              https://raw.githubusercontent.com/NVIDIA/nvidia-sdk/master/nvml/nvml.h
+
         run: |
           python -m cibuildwheel --output-dir dist/
 
