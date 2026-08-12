@@ -43,8 +43,8 @@ jobs:
             set -eux
 
             dnf update -y
+
             dnf install -y \
-                @development-tools \
                 cmake \
                 findutils \
                 rpm
@@ -53,11 +53,19 @@ jobs:
             cat /etc/os-release
 
             echo
+            echo "=== DNF repositories ==="
+            dnf repolist
+
+            echo
             echo "=== Searching DNF for NVML ==="
             dnf search nvml || true
 
             echo
-            echo "=== Searching installed RPM packages ==="
+            echo "=== Searching DNF for CUDA ==="
+            dnf search cuda || true
+
+            echo
+            echo "=== Installed NVIDIA/CUDA packages ==="
             rpm -qa | grep -Ei 'nvidia|cuda|nvml' || true
 
             echo
