@@ -12,7 +12,7 @@ class GPUStates(ctypes.Structure):
         ("temp", ctypes.c_uint32),
         ("utils", ctypes.c_uint32),
         ("mem_mib", ctypes.c_uint64),
-        ("delta_mib", ctypes.c_uint64),
+        ("delta_mib", ctypes.c_int64),
     ]
 def _default_library_path() -> Path:
     """

@@ -1,157 +1,628 @@
 # GPUMetric Documentation
 
-Technical documentation for installing, configuring, using, testing, and integrating GPUMetric.
+Technical documentation for **GPUMetric**, a lightweight NVIDIA GPU telemetry library for Linux and machine learning workloads.
 
-GPUMetric is a lightweight NVIDIA GPU telemetry library for Linux and machine learning workloads. The native core is implemented in C, communicates with NVIDIA NVML, and is exposed to Python through a thin `ctypes` FFI layer.
+GPUMetric is a native GPU telemetry component built around **NVIDIA NVML**.
+
+The native implementation is written in **C** and exposed to Python through a thin **`ctypes` FFI** layer.
+
+The library is designed to collect selected GPU telemetry directly from a long-running application process and expose the resulting observations through a small Python API.
 
 ---
 
-## 1. Supported Environment
+# 1. Project Overview
 
-The current supported target is:
+GPUMetric solves a narrow infrastructure problem:
 
-- **Operating system:** Linux x86-64
-- **Primary distribution:** Ubuntu
-- **Python:** CPython 3.11
-- **GPU:** NVIDIA GPU
-- **GPU management interface:** NVIDIA NVML
+> Collect selected NVIDIA GPU telemetry from inside an application process without repeatedly spawning `nvidia-smi`.
 
-The current package and test matrix is built around this environment. Other Linux distributions, architectures, Python versions, or GPU vendors are outside the currently validated target and require independent testing.
-
-### 1.1 NVIDIA Driver
-
-GPUMetric requires a functional NVIDIA driver with NVML available.
-
-Verify the host before installing or debugging GPUMetric:
-
-```bash
-nvidia-smi
-```
-
-The command must be able to communicate with the NVIDIA GPU and display its state.
-
-If `nvidia-smi` fails, GPUMetric should be expected to fail as well because both depend on the NVIDIA driver/NVML stack for GPU management access.
-
-### 1.2 Python
-
-Use CPython 3.11 for the current supported package environment:
-
-```bash
-python3.11 --version
-```
-
-Expected form:
+The runtime path is:
 
 ```text
-Python 3.11.x
+Python Application
+        │
+        ▼
+GPUMetrics
+        │
+        ▼
+ctypes FFI
+        │
+        ▼
+C ABI
+        │
+        ▼
+libgpumetric.so
+        │
+        ▼
+NVML
+        │
+        ▼
+NVIDIA Driver
+        │
+        ▼
+NVIDIA GPU
 ```
 
-Create an isolated environment before installation:
+The current telemetry model exposes:
 
-```bash
-python3.11 -m venv .venv
-source .venv/bin/activate
-```
+* GPU temperature
+* GPU utilization
+* GPU memory usage
+* GPU memory usage delta between consecutive samples
 
-Upgrade the packaging tools:
+The output is intentionally small.
 
-```bash
-python -m pip install --upgrade pip setuptools wheel
-```
+GPUMetric collects telemetry and returns it to the application. The application determines how that data is logged, exported, transported, aggregated, stored, or visualized.
 
 ---
 
-## 2. Installation
+# 2. Design Philosophy
 
-Install GPUMetric from PyPI:
+## 2.1 Narrow hardware-facing component
 
-```bash
-python3.11 -m pip install gpumetric
-```
+The native layer exists to communicate with NVML and expose GPU state.
 
-Verify that the package imports correctly:
-
-```bash
-python3.11 -c "import gpumetric; print(gpumetric)"
-```
-
-Verify the public classes:
-
-```bash
-python3.11 -c "from gpumetric import GPUMetrics, GPUStats; print(GPUMetrics, GPUStats)"
-```
-
-A successful import confirms that the Python package is available. It does not by itself prove that NVML can access the GPU; that must be validated separately with `nvidia-smi` and an actual sampling call.
+It is not intended to become a general-purpose observability system.
 
 ---
 
-## 3. Minimal Usage
+## 2.2 Small Python API
 
-The recommended application pattern is:
-
-```python
-from gpumetric import GPUMetrics
-
-with GPUMetrics(device_index=0) as gpu:
-    stats = gpu.sample()
-
-    print(f"Temperature: {stats.temperature} °C")
-    print(f"Utilization: {stats.utilization}%")
-    print(f"Memory: {stats.memory_mib} MiB")
-    print(f"Memory delta: {stats.memory_delta_mib} MiB")
-```
-
-Example output:
-
-```text
-Temperature: 42 °C
-Utilization: 0%
-Memory: 397 MiB
-Memory delta: 0 MiB
-```
-
-The exact values depend on the current GPU state and workload.
-
----
-
-## 4. Public API
-
-GPUMetric currently exposes two primary public classes:
+The primary Python interface is:
 
 ```python
 from gpumetric import GPUMetrics, GPUStats
 ```
 
-### 4.1 `GPUMetrics`
+The application should not need to understand the implementation details of the native layer.
 
-`GPUMetrics` is the runtime interface for GPU telemetry collection.
+---
 
-The constructor accepts a GPU device index:
+## 2.3 Collection and observability are separate
 
-```python
-GPUMetrics(device_index=0)
+GPUMetric collects telemetry.
+
+It does not own:
+
+* metric storage
+* dashboards
+* alerting
+* distributed aggregation
+* message-bus infrastructure
+* time-series databases
+* telemetry backends
+
+Those concerns belong to the surrounding application or infrastructure.
+
+---
+
+## 2.4 Explicit resource lifecycle
+
+The preferred lifecycle is:
+
+```text
+initialize
+    │
+    ▼
+sample
+    │
+    ├── sample
+    ├── sample
+    ├── sample
+    │
+    ▼
+cleanup
 ```
 
-The primary operation is:
+A monitoring object should normally be initialized once and reused for multiple samples.
+
+---
+
+# 3. System Architecture
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│                         Application                          │
+│                                                              │
+│  ML Training / Inference / GPU Worker / Monitoring Agent    │
+└──────────────────────────────┬───────────────────────────────┘
+                               │
+                               │ Python API
+                               ▼
+┌──────────────────────────────────────────────────────────────┐
+│                        Python Layer                          │
+│                                                              │
+│  GPUMetrics                                                   │
+│  GPUStats                                                     │
+│  Exception hierarchy                                          │
+│                                                              │
+│  ctypes FFI                                                   │
+└──────────────────────────────┬───────────────────────────────┘
+                               │
+                               │ C ABI
+                               ▼
+┌──────────────────────────────────────────────────────────────┐
+│                         Native Layer                         │
+│                                                              │
+│  libgpumetric.so                                              │
+│                                                              │
+│  - NVML initialization                                        │
+│  - device selection                                           │
+│  - GPU handle management                                      │
+│  - telemetry collection                                       │
+│  - sampling state                                             │
+│  - memory delta calculation                                   │
+│  - native lifecycle                                           │
+└──────────────────────────────┬───────────────────────────────┘
+                               │
+                               │ NVML API
+                               ▼
+┌──────────────────────────────────────────────────────────────┐
+│                       NVIDIA Stack                            │
+│                                                              │
+│  NVIDIA Driver                                                 │
+│       │                                                       │
+│       ▼                                                       │
+│      NVML                                                     │
+└──────────────────────────────┬───────────────────────────────┘
+                               │
+                               ▼
+                         NVIDIA GPU
+```
+
+---
+
+# 4. Repository Architecture
+
+The `develop` branch uses a `src/` package layout:
+
+```text
+GPUMetric/
+├── .github/
+│   └── workflows/
+│
+├── docs/
+│   └── DOCS.md
+│
+├── src/
+│   ├── gpumetric/
+│   │   ├── __init__.py
+│   │   ├── _ffi.py
+│   │   ├── exceptions.py
+│   │   └── metrics.py
+│   │
+│   └── gpumetric_core/
+│       ├── gpu_metric.c
+│       └── gpu_metric.h
+│
+├── tests/
+│   ├── test_context_manager.py
+│   ├── test_device_index_type.py
+│   ├── test_gpu_metrics.py
+│   ├── test_gpu_metrics_reinitialization.py
+│   ├── test_gpu_stats.py
+│   ├── test_import.py
+│   └── test_lifecycle.py
+│
+├── CMakeLists.txt
+├── LICENSE
+├── pyproject.toml
+└── README.md
+```
+
+The responsibilities are:
+
+```text
+src/gpumetric/
+    Python application-facing package
+
+src/gpumetric/metrics.py
+    GPUMetrics and GPUStats
+
+src/gpumetric/_ffi.py
+    ctypes/native ABI boundary
+
+src/gpumetric/exceptions.py
+    Public exception hierarchy
+
+src/gpumetric_core/gpu_metric.c
+    Native NVML implementation
+
+src/gpumetric_core/gpu_metric.h
+    Native C ABI declarations
+
+CMakeLists.txt
+    Native build configuration
+
+pyproject.toml
+    Python packaging configuration
+
+tests/
+    Unit and integration-level validation
+
+docs/DOCS.md
+    Technical documentation
+```
+
+---
+
+# 5. Runtime Data Flow
+
+A call to:
 
 ```python
 stats = gpu.sample()
 ```
 
-The class supports the context-manager protocol:
+passes through the following layers:
+
+```text
+gpu.sample()
+     │
+     ▼
+GPUMetrics
+     │
+     ▼
+GPUMetricFFI
+     │
+     ▼
+ctypes
+     │
+     ▼
+C ABI
+     │
+     ▼
+libgpumetric.so
+     │
+     ▼
+NVML
+     │
+     ├── temperature
+     ├── utilization
+     └── memory
+     │
+     ▼
+native sampling state
+     │
+     ├── current memory
+     └── previous memory
+     │
+     ▼
+GPUStats
+     │
+     ▼
+Python Application
+```
+
+---
+
+# 6. Native C Layer
+
+The native implementation is located in:
+
+```text
+src/gpumetric_core/
+```
+
+The primary implementation is:
+
+```text
+gpu_metric.c
+```
+
+with the C interface declared in:
+
+```text
+gpu_metric.h
+```
+
+The native layer is responsible for:
+
+* NVML initialization
+* NVIDIA GPU enumeration
+* GPU device selection
+* NVML device handle acquisition
+* temperature collection
+* utilization collection
+* memory collection
+* memory delta calculation
+* native state management
+* native error codes
+* NVML shutdown
+
+The native implementation is compiled into:
+
+```text
+libgpumetric.so
+```
+
+---
+
+# 7. C ABI
+
+The native C interface currently exposes:
+
+```c
+int gpu_metric_init(unsigned int device_index);
+
+int gpu_metric_sample(GPUStats* out);
+
+void gpu_metric_cleanup(void);
+```
+
+The telemetry structure is:
+
+```c
+typedef struct {
+    uint32_t temp;
+    uint32_t util;
+    uint64_t mem_mib;
+    int64_t delta_mib;
+} GPUStats;
+```
+
+The native API uses negative integer return codes for failures.
+
+Current codes are:
+
+| Code | Meaning                                |
+| ---: | -------------------------------------- |
+|  `0` | Success                                |
+| `-1` | NVML initialization failure            |
+| `-2` | No NVIDIA GPU detected                 |
+| `-3` | GPU communication or telemetry failure |
+| `-4` | Invalid argument                       |
+| `-5` | Native library not initialized         |
+
+The C ABI is the contract between the native implementation and the Python FFI layer.
+
+---
+
+# 8. Native State Model
+
+The current native implementation maintains process-wide static state:
+
+```c
+static nvmlDevice_t device;
+static MemoryCache cache;
+static int initialized = 0;
+```
+
+This means the native library currently operates with:
+
+> **one active GPU context per process**
+
+The selected NVML device and memory sampling cache are not stored per `GPUMetrics` Python object.
+
+Instead, they belong to the process-wide native context.
+
+---
+
+# 9. Consequences of the Process-Wide Context
+
+A normal application should use:
 
 ```python
 with GPUMetrics(device_index=0) as gpu:
-    stats = gpu.sample()
+    ...
 ```
 
-The context manager defines a clear lifecycle for the native monitoring resources.
+and maintain that object for the lifetime of the monitoring component.
 
-### 4.2 `GPUStats`
+The native initialization function is idempotent while the native context is already initialized.
 
-`GPUStats` is the data object returned by `GPUMetrics.sample()`.
+Therefore:
 
-A sample contains four fields:
+```python
+gpu0 = GPUMetrics(device_index=0)
+gpu1 = GPUMetrics(device_index=1)
+```
+
+does **not** currently provide two independent native contexts.
+
+The second initialization sees the native library as already initialized.
+
+The current implementation therefore should not be treated as a multi-context GPU telemetry manager.
+
+For multi-GPU applications, the safest current design is to use one native context at a time and explicitly manage the lifecycle between device selections.
+
+This is an implementation limitation of the current native state model, not a limitation imposed by NVML itself.
+
+---
+
+# 10. NVIDIA NVML
+
+GPUMetric uses NVIDIA NVML as its hardware management interface.
+
+The dependency chain is:
+
+```text
+GPUMetric
+    │
+    ▼
+NVML
+    │
+    ▼
+NVIDIA Driver
+    │
+    ▼
+GPU
+```
+
+NVML provides the hardware-level telemetry queried by the native implementation.
+
+A functional NVIDIA driver and NVML runtime are therefore required.
+
+---
+
+# 11. Why NVML Instead of `nvidia-smi`
+
+`nvidia-smi` is a command-line interface used for NVIDIA GPU administration, inspection, and diagnostics.
+
+A repeated application-side CLI approach looks like:
+
+```text
+Application
+    │
+    ├── spawn nvidia-smi
+    │
+    ▼
+nvidia-smi
+    │
+    ▼
+NVIDIA stack
+    │
+    ▼
+stdout
+    │
+    ▼
+Application parser
+```
+
+GPUMetric instead provides:
+
+```text
+Application
+    │
+    ▼
+ctypes
+    │
+    ▼
+libgpumetric.so
+    │
+    ▼
+NVML
+    │
+    ▼
+GPU
+```
+
+This eliminates the repeated external process boundary and CLI parsing from the application's sampling path.
+
+This is an architectural benefit rather than a claim that GPUMetric is universally faster than every possible use of `nvidia-smi`.
+
+`nvidia-smi` remains the appropriate tool for:
+
+* diagnostics
+* driver validation
+* administration
+* manual inspection
+* troubleshooting
+
+GPUMetric is intended for programmatic application-side telemetry.
+
+---
+
+# 12. Python Package
+
+The Python package is located under:
+
+```text
+src/gpumetric/
+```
+
+The package exposes:
+
+```python
+from gpumetric import GPUMetrics, GPUStats
+```
+
+It also exports the public exception hierarchy.
+
+The package version currently defined by the source is:
+
+```python
+__version__ = "0.1.0"
+```
+
+---
+
+# 13. `GPUMetrics`
+
+`GPUMetrics` is the primary runtime interface.
+
+Import it with:
+
+```python
+from gpumetric import GPUMetrics
+```
+
+Initialize it with:
+
+```python
+gpu = GPUMetrics(device_index=0)
+```
+
+The constructor currently accepts:
+
+```python
+GPUMetrics(
+    device_index: int = 0,
+    lib_path: str | None = None,
+)
+```
+
+`device_index` selects the NVIDIA GPU.
+
+`lib_path` allows the native shared library path to be overridden.
+
+The default native library path is resolved relative to the installed Python package:
+
+```text
+gpumetric/lib/libgpumetric.so
+```
+
+---
+
+# 14. Device Index Validation
+
+The Python layer validates `device_index` before passing it to native code.
+
+It must:
+
+* be an integer
+* be non-negative
+
+Invalid values raise:
+
+```python
+GPUMetricArgumentError
+```
+
+For example:
+
+```python
+from gpumetric import GPUMetrics
+
+GPUMetrics(device_index=-1)
+```
+
+raises a Python-level argument error.
+
+The native layer additionally validates the device index against the number of GPUs reported by NVML.
+
+---
+
+# 15. `GPUStats`
+
+`GPUStats` is the public telemetry object returned by:
+
+```python
+gpu.sample()
+```
+
+It is defined as an immutable dataclass:
+
+```python
+@dataclass(frozen=True, slots=True)
+class GPUStats:
+    temperature: int
+    utilization: int
+    memory_mib: int
+    memory_delta_mib: int
+```
+
+A sample therefore contains four values:
 
 ```python
 stats.temperature
@@ -160,87 +631,21 @@ stats.memory_mib
 stats.memory_delta_mib
 ```
 
-`GPUStats` represents telemetry data. It does not perform GPU initialization or query NVML by itself.
+`GPUStats` does not initialize NVML and does not communicate with the GPU.
+
+It represents the result of a sampling operation.
 
 ---
 
-## 5. Device Selection
+# 16. Temperature
 
-A GPU is selected through `device_index`:
-
-```python
-with GPUMetrics(device_index=0) as gpu:
-    stats = gpu.sample()
-```
-
-Device numbering should be validated against the host's NVIDIA configuration:
-
-```bash
-nvidia-smi -L
-```
-
-Example:
-
-```text
-GPU 0: NVIDIA ...
-GPU 1: NVIDIA ...
-```
-
-The device index passed to `GPUMetrics` is used by the native layer when selecting the GPU through NVML.
-
-Applications running on single-GPU hosts will normally use:
-
-```python
-GPUMetrics(device_index=0)
-```
-
----
-
-## 6. Sampling
-
-Call `sample()` to obtain one telemetry snapshot:
-
-```python
-with GPUMetrics(device_index=0) as gpu:
-    stats = gpu.sample()
-```
-
-Inspect the returned object:
-
-```python
-print(type(stats))
-```
-
-The expected public type is:
-
-```text
-<class 'gpumetric.metrics.GPUStats'>
-```
-
-A sample can be serialized or forwarded to an application-level metrics system using its four fields.
-
-Example:
-
-```python
-telemetry = {
-    "gpu_temperature_celsius": stats.temperature,
-    "gpu_utilization_percent": stats.utilization,
-    "gpu_memory_mib": stats.memory_mib,
-    "gpu_memory_delta_mib": stats.memory_delta_mib,
-}
-```
-
----
-
-## 7. `GPUStats` Fields
-
-### 7.1 `temperature`
-
-GPU temperature in degrees Celsius as reported by NVML.
+Temperature is exposed through:
 
 ```python
 stats.temperature
 ```
+
+The value represents the GPU temperature in degrees Celsius reported by NVML.
 
 Example:
 
@@ -248,15 +653,21 @@ Example:
 42
 ```
 
-The value should be interpreted as an instantaneous telemetry reading rather than a sustained thermal statistic.
+This is an instantaneous telemetry observation.
 
-### 7.2 `utilization`
+It is not a historical thermal average or thermal profile.
 
-GPU utilization expressed as a percentage.
+---
+
+# 17. GPU Utilization
+
+Utilization is exposed through:
 
 ```python
 stats.utilization
 ```
+
+It represents GPU utilization as a percentage.
 
 The expected range is:
 
@@ -264,12 +675,36 @@ The expected range is:
 0 - 100
 ```
 
-### 7.3 `memory_mib`
+The value comes from:
 
-Current GPU memory usage in MiB.
+```c
+nvmlDeviceGetUtilizationRates()
+```
+
+and the native implementation uses the GPU utilization field.
+
+---
+
+# 18. GPU Memory
+
+Current GPU memory usage is exposed through:
 
 ```python
 stats.memory_mib
+```
+
+The native implementation obtains memory information through:
+
+```c
+nvmlDeviceGetMemoryInfo()
+```
+
+NVML reports memory in bytes.
+
+GPUMetric converts the used memory value to MiB:
+
+```text
+memory_mib = used_bytes / (1024 * 1024)
 ```
 
 Example:
@@ -278,42 +713,151 @@ Example:
 397
 ```
 
-This value reflects the memory usage reported by the native NVML-backed implementation.
+means approximately 397 MiB of reported used GPU memory after the integer conversion.
 
-### 7.4 `memory_delta_mib`
+---
 
-Change in reported GPU memory usage between samples.
+# 19. Memory Delta
 
-```python
-stats.memory_delta_mib
-```
+The native implementation tracks the previous memory observation.
 
 Conceptually:
 
 ```text
-memory_delta_mib = current_memory_mib - previous_memory_mib
+memory_delta_mib =
+    current_memory_mib -
+    previous_memory_mib
 ```
 
-For example:
+Example:
 
 ```text
-Sample 1: 397 MiB
-Sample 2: 430 MiB
+Sample 1:
+397 MiB
 
-Delta: +33 MiB
+Sample 2:
+430 MiB
+
+Delta:
++33 MiB
 ```
 
-The exact initial-sample behavior is determined by the native sampling state. Applications should treat the delta as an observation between samples rather than as a memory profiler result.
+A decrease is also valid:
 
-`memory_delta_mib` does not identify which CUDA allocation, tensor, process, or subsystem caused the change.
+```text
+Sample 1:
+430 MiB
+
+Sample 2:
+397 MiB
+
+Delta:
+-33 MiB
+```
+
+The first sample after initialization has no previous observation and therefore produces a zero delta in the native implementation.
+
+The cache is updated only after all NVML telemetry calls for the sample succeed.
 
 ---
 
-## 8. Repeated Sampling
+# 20. Memory Delta Semantics
 
-For monitoring loops, initialize `GPUMetrics` once and reuse it for multiple samples.
+`memory_delta_mib` is a change in the **reported GPU memory usage**.
 
-Recommended:
+It is not:
+
+* CUDA allocation size
+* tensor allocation size
+* per-process allocation
+* allocator statistics
+* CUDA memory leak detection
+* kernel memory usage
+* individual allocation tracking
+
+For example, a positive delta:
+
+```text
++512 MiB
+```
+
+means that the observed total GPU memory usage increased by approximately 512 MiB between the two samples.
+
+It does not identify what caused the increase.
+
+---
+
+# 21. Important FFI ABI Requirement
+
+The native C ABI defines:
+
+```c
+int64_t delta_mib;
+```
+
+The corresponding `ctypes` representation must therefore be:
+
+```python
+("delta_mib", ctypes.c_int64)
+```
+
+The current FFI implementation in `develop` uses:
+
+```python
+("delta_mib", ctypes.c_int64)
+```
+
+This is an ABI mismatch.
+
+A negative native `int64_t` value can therefore be interpreted as a very large positive `uint64_t` value in Python.
+
+The FFI definition should be corrected before relying on negative memory deltas.
+
+The correct mapping is:
+
+```python
+class GPUStates(ctypes.Structure):
+    _fields_ = [
+        ("temp", ctypes.c_uint32),
+        ("utils", ctypes.c_uint32),
+        ("mem_mib", ctypes.c_uint64),
+        ("delta_mib", ctypes.c_int64),
+    ]
+```
+
+This correction should be included in the next source revision and covered by a test that validates a negative delta.
+
+---
+
+# 22. Sampling
+
+The primary sampling operation is:
+
+```python
+stats = gpu.sample()
+```
+
+Example:
+
+```python
+from gpumetric import GPUMetrics
+
+with GPUMetrics(device_index=0) as gpu:
+    stats = gpu.sample()
+
+    print(stats.temperature)
+    print(stats.utilization)
+    print(stats.memory_mib)
+    print(stats.memory_delta_mib)
+```
+
+The native layer performs all required NVML queries during the sample.
+
+---
+
+# 23. Repeated Sampling
+
+For long-running workloads, initialize the monitoring object once:
 
 ```python
 import time
@@ -325,10 +869,12 @@ with GPUMetrics(device_index=0) as gpu:
     while True:
         stats = gpu.sample()
 
-        print(f"Temperature: {stats.temperature} °C")
-        print(f"Utilization: {stats.utilization}%")
-        print(f"Memory: {stats.memory_mib} MiB")
-        print(f"Memory delta: {stats.memory_delta_mib} MiB")
+        print(
+            f"temperature={stats.temperature}C "
+            f"utilization={stats.utilization}% "
+            f"memory={stats.memory_mib}MiB "
+            f"memory_delta={stats.memory_delta_mib}MiB"
+        )
 
         time.sleep(1)
 ```
@@ -344,162 +890,270 @@ GPUMetrics initialization
         ├── sample()
         │
         ▼
-GPUMetrics shutdown
+GPUMetrics cleanup
 ```
 
-Repeatedly constructing and destroying `GPUMetrics` for every sample is not the intended monitoring pattern.
+Do not create and destroy the native context around every sample unless the application explicitly requires that lifecycle.
 
 ---
 
-## 9. Context Manager and Resource Lifecycle
+# 24. Context Manager
 
-Use the context manager when the monitoring object has a bounded lifetime:
+The preferred resource-management interface is the context manager:
 
 ```python
 with GPUMetrics(device_index=0) as gpu:
     stats = gpu.sample()
 ```
 
-This provides an explicit boundary for resource initialization and cleanup.
+Entering the context returns the `GPUMetrics` instance.
 
-The lifecycle can be viewed as:
+Exiting the context calls:
 
-```text
-enter context
-    │
-    ▼
-initialize GPU monitoring
-    │
-    ▼
-collect samples
-    │
-    ▼
-exit context
-    │
-    ▼
-release native resources
+```python
+cleanup()
 ```
 
-For long-running processes, keep the context open for the duration of the monitoring lifecycle rather than opening a new context around every individual sample.
+The lifecycle is:
+
+```text
+enter
+  │
+  ▼
+native initialization
+  │
+  ▼
+sampling
+  │
+  ▼
+exit
+  │
+  ▼
+native cleanup
+```
 
 ---
 
-## 10. Machine Learning Integration
+# 25. Explicit Cleanup
 
-GPUMetric can be used inside training or inference processes to correlate workload-level metrics with hardware telemetry.
+The object also provides:
+
+```python
+gpu.cleanup()
+```
+
+Cleanup is idempotent.
+
+Calling it multiple times is safe:
+
+```python
+gpu.cleanup()
+gpu.cleanup()
+```
+
+After cleanup, another call to:
+
+```python
+gpu.sample()
+```
+
+raises:
+
+```python
+GPUMetricNotInitializedError
+```
+
+The object also performs best-effort cleanup during Python object destruction.
+
+The context manager remains the preferred explicit lifecycle mechanism.
+
+---
+
+# 26. Reinitialization
+
+After a `GPUMetrics` instance has been cleaned up, another instance can initialize the native library:
+
+```python
+with GPUMetrics(device_index=0) as first:
+    first_stats = first.sample()
+
+with GPUMetrics(device_index=0) as second:
+    second_stats = second.sample()
+```
+
+The native cleanup resets:
+
+* initialization state
+* memory sampling cache
+* device handle state
+
+Therefore the second initialization starts a new sampling sequence.
+
+The first sample of the new sequence has no previous sample and therefore starts with a zero memory delta.
+
+---
+
+# 27. Exception Hierarchy
+
+The package exposes:
+
+```python
+GPUMetricError
+```
+
+as the base exception.
+
+The current hierarchy is:
+
+```text
+GPUMetricError
+├── GPUMetricInitializationError
+├── GPUMetricNoDeviceError
+├── GPUMetricDeviceError
+├── GPUMetricArgumentError
+├── GPUMetricNotInitializedError
+└── GPUMetricSamplingError
+```
+
+---
+
+# 28. `GPUMetricInitializationError`
+
+Raised when NVML initialization fails.
 
 Example:
 
 ```python
-from gpumetric import GPUMetrics
-
-
-with GPUMetrics(device_index=0) as gpu:
-    for step, batch in enumerate(dataloader):
-        loss = train_step(batch)
-        stats = gpu.sample()
-
-        print(
-            f"step={step} "
-            f"loss={loss.item():.4f} "
-            f"gpu_util={stats.utilization}% "
-            f"gpu_temp={stats.temperature}C "
-            f"gpu_memory={stats.memory_mib}MiB "
-            f"gpu_memory_delta={stats.memory_delta_mib}MiB"
-        )
+from gpumetric import GPUMetricInitializationError
 ```
-
-This allows application-level signals such as:
-
-- loss
-- learning rate
-- throughput
-- batch size
-- inference latency
-- training step
-
-To be observed alongside:
-
-- GPU utilization
-- GPU temperature
-- GPU memory usage
-- GPU memory change
-
-This can be useful when investigating GPU under-utilization, memory growth, thermal behavior, or workload-dependent changes in GPU state.
-
----
-
-## 11. Telemetry Integration
-
-GPUMetric intentionally does not prescribe a telemetry backend.
-
-The application decides where samples are exported.
-
-Typical integration targets include:
-
-- application logs
-- Prometheus exporters
-- OpenTelemetry pipelines
-- Kafka or another message broker
-- time-series databases
-- internal ML infrastructure
-- custom monitoring services
-
-Example transformation:
-
-```python
-stats = gpu.sample()
-
-metric_record = {
-    "temperature_celsius": stats.temperature,
-    "utilization_percent": stats.utilization,
-    "memory_mib": stats.memory_mib,
-    "memory_delta_mib": stats.memory_delta_mib,
-}
-```
-
-The intended architecture is:
-
-```text
-                    NVIDIA GPU
-                        │
-                        ▼
-                       NVML
-                        │
-                        ▼
-                    GPUMetric
-                        │
-                        ▼
-                   ML Application
-                        │
-          ┌─────────────┼─────────────┐
-          ▼             ▼             ▼
-        Logs       Prometheus    OpenTelemetry
-                                      │
-                                      ▼
-                                Telemetry Backend
-```
-
-GPUMetric owns GPU state collection. Storage, transport, aggregation, alerting, and visualization remain application-level concerns.
-
----
-
-## 12. Error Handling
-
-The Python API is backed by a native C implementation and NVML. Initialization and sampling can therefore fail when the host GPU environment is unavailable or invalid.
 
 Typical causes include:
 
-- NVIDIA driver failure
-- NVML initialization failure
-- invalid GPU device index
-- inaccessible GPU device
-- missing native library
-- incompatible runtime environment
+* NVIDIA driver problems
+* NVML initialization failure
+* inaccessible NVIDIA runtime
 
-At the application level, handle initialization and sampling failures explicitly.
+---
+
+# 29. `GPUMetricNoDeviceError`
+
+Raised when NVML reports that no compatible NVIDIA GPU is available.
 
 Example:
+
+```python
+from gpumetric import GPUMetricNoDeviceError
+```
+
+This can occur on systems without an accessible NVIDIA GPU.
+
+---
+
+# 30. `GPUMetricDeviceError`
+
+Raised when GPUMetric cannot communicate with the GPU or fetch telemetry.
+
+Typical causes include:
+
+* GPU communication failure
+* NVML telemetry query failure
+* driver/runtime failure
+* inaccessible device
+
+---
+
+# 31. `GPUMetricArgumentError`
+
+Raised when an invalid argument is supplied.
+
+It also derives from:
+
+```python
+ValueError
+```
+
+Example:
+
+```python
+GPUMetrics(device_index=-1)
+```
+
+---
+
+# 32. `GPUMetricNotInitializedError`
+
+Raised when an operation requires an initialized native context but the context is not initialized.
+
+For example:
+
+```python
+gpu.cleanup()
+gpu.sample()
+```
+
+results in:
+
+```python
+GPUMetricNotInitializedError
+```
+
+---
+
+# 33. `GPUMetricSamplingError`
+
+Raised when a GPU sampling operation fails without mapping to a more specific public error type.
+
+It represents a failure during:
+
+```python
+gpu.sample()
+```
+
+---
+
+# 34. Native Error Mapping
+
+The Python layer converts native return codes into Python exceptions.
+
+Conceptually:
+
+```text
+C return code
+      │
+      ▼
+GPUMetrics
+      │
+      ▼
+Python exception
+```
+
+Current mapping includes:
+
+| Native code | Python exception               |
+| ----------: | ------------------------------ |
+|        `-1` | `GPUMetricInitializationError` |
+|        `-2` | `GPUMetricNoDeviceError`       |
+|        `-3` | `GPUMetricDeviceError`         |
+|        `-4` | `GPUMetricArgumentError`       |
+|        `-5` | `GPUMetricNotInitializedError` |
+
+Unknown initialization errors are mapped to:
+
+```python
+GPUMetricError
+```
+
+Unknown sampling errors are mapped to:
+
+```python
+GPUMetricSamplingError
+```
+
+---
+
+# 35. Error Handling Example
+
+A simple application-level boundary is:
 
 ```python
 from gpumetric import GPUMetrics
@@ -509,197 +1163,595 @@ try:
     with GPUMetrics(device_index=0) as gpu:
         stats = gpu.sample()
         print(stats)
+
 except Exception as exc:
     print(f"GPU monitoring failed: {exc}")
 ```
 
-For production applications, catch the specific exception types exposed by the installed package when those types are available and stable in the application dependency policy.
-
-Do not assume that a successful Python import means that GPU telemetry is available. Importability and runtime NVML availability are separate checks.
+Production applications should prefer catching the specific public exception classes when the application can distinguish recovery behavior.
 
 ---
 
-## 13. Why GPUMetric Instead of Repeated `nvidia-smi` Calls?
+# 36. Runtime Requirements
 
-`nvidia-smi` is an NVIDIA command-line diagnostic and administration tool. GPUMetric addresses a different problem: programmatic telemetry collection from inside an application process.
+The primary validated environment is:
 
-A CLI-based approach repeatedly creates an external process:
+| Component        | Target            |
+| ---------------- | ----------------- |
+| Operating system | Linux x86-64      |
+| Distribution     | Ubuntu            |
+| Python           | CPython 3.11      |
+| GPU              | NVIDIA GPU        |
+| GPU interface    | NVIDIA NVML       |
+| Native library   | `libgpumetric.so` |
 
-```text
-Application
-│
-├── spawn nvidia-smi
-├── wait for process
-├── read stdout
-├── parse output
-│
-├── spawn nvidia-smi
-├── wait for process
-├── read stdout
-├── parse output
-│
-└── ...
-```
-
-GPUMetric provides a direct in-process path:
+The Python package metadata currently declares:
 
 ```text
-Python Application
-        │
-        ▼
-      ctypes
-        │
-        ▼
-libgpumetric.so
-        │
-        ▼
-       NVML
-        │
-        ▼
-       GPU
+Python >= 3.10
 ```
 
-This removes the need to repeatedly spawn and parse `nvidia-smi` for application telemetry.
+and advertises Python 3.10 through 3.13 classifiers.
 
-`nvidia-smi` remains valuable for:
+However, the primary development and validation environment for the current project is CPython 3.11.
 
-- host diagnostics
-- driver validation
-- manual GPU inspection
-- administration
-- troubleshooting
-
-GPUMetric is intended for application-side, repeated telemetry collection.
+Other environments require separate validation.
 
 ---
 
-## 14. Native and FFI Architecture
+# 37. NVIDIA Driver Validation
 
-The system is divided into a native layer and a Python binding layer.
+Before troubleshooting GPUMetric, validate the NVIDIA stack:
+
+```bash
+nvidia-smi
+```
+
+The command should successfully communicate with the GPU.
+
+The dependency chain is:
 
 ```text
-Python application
-        │
-        ▼
-GPUMetrics / GPUStats
-        │
-        ▼
-Python FFI
-        │
-        ▼
-ctypes
-        │
-        ▼
-C ABI
-        │
-        ▼
-Native GPUMetric library
-        │
-        ▼
-NVIDIA NVML
-        │
-        ▼
+Python
+  │
+  ▼
+GPUMetric
+  │
+  ▼
+NVML
+  │
+  ▼
+NVIDIA Driver
+  │
+  ▼
 GPU
 ```
 
-### Native C Layer
-
-The native layer is responsible for:
-
-- NVML initialization
-- GPU handle access
-- telemetry collection
-- sampling state
-- memory delta calculation
-- native error handling
-
-### Python Layer
-
-The Python layer is responsible for:
-
-- loading the native library
-- defining FFI types and function signatures
-- exposing the Python API
-- representing returned telemetry as Python objects
-
-This separation allows the native telemetry implementation to remain independent from the application consuming the data.
+If the NVIDIA runtime is broken, GPUMetric cannot provide GPU telemetry.
 
 ---
 
-## 15. Shared Library
+# 38. Python Environment
 
-The native implementation is packaged as a shared library named:
-
-```text
-libgpumetric.so
-```
-
-The shared library contains the native GPU telemetry implementation and its C ABI.
-
-The Python package uses the native library internally through the FFI layer.
-
-Applications should interact with the documented Python API rather than depending on internal Python FFI implementation details unless they explicitly require lower-level integration.
-
----
-
-## 16. Development and Local Build
-
-The Python package is installed from PyPI for normal use. Native development is performed from the repository.
-
-Install build dependencies on Ubuntu:
+Verify Python:
 
 ```bash
-chmod +x scripts/install_deps.sh
-./scripts/install_deps.sh
-```
-
-Verify the required host tools:
-
-```bash
-cmake --version
-cc --version
-nvidia-smi
 python3.11 --version
 ```
 
-Build the native component using the repository helper script when available:
+Expected:
 
-```bash
-chmod +x scripts/build/initial_run_of_the_cmake_build.sh
-./scripts/build/initial_run_of_the_cmake_build.sh
+```text
+Python 3.11.x
 ```
 
-Or build directly with CMake:
+Create a virtual environment:
+
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+```
+
+Upgrade packaging tools:
+
+```bash
+python -m pip install --upgrade pip setuptools wheel
+```
+
+---
+
+# 39. Installation from PyPI
+
+Install:
+
+```bash
+python3.11 -m pip install gpumetric
+```
+
+Verify:
+
+```bash
+python3.11 -c "import gpumetric; print(gpumetric)"
+```
+
+Verify the public classes:
+
+```bash
+python3.11 -c "from gpumetric import GPUMetrics, GPUStats; print(GPUMetrics, GPUStats)"
+```
+
+A successful import confirms that the Python package is installed.
+
+It does not prove that the NVIDIA driver or NVML is functional.
+
+---
+
+# 40. Minimal Runtime Validation
+
+After installation:
+
+```bash
+python3.11 - <<'PY'
+from gpumetric import GPUMetrics
+
+with GPUMetrics(device_index=0) as gpu:
+    stats = gpu.sample()
+    print(stats)
+PY
+```
+
+This exercises:
+
+```text
+Python
+  │
+  ▼
+GPUMetric
+  │
+  ▼
+ctypes
+  │
+  ▼
+libgpumetric.so
+  │
+  ▼
+NVML
+  │
+  ▼
+GPU
+```
+
+---
+
+# 41. Native Build
+
+The native library is built using CMake.
+
+The current `CMakeLists.txt` requires:
+
+```text
+CMake >= 3.15
+```
+
+and builds the native implementation using:
+
+```text
+C11
+```
+
+The native library source is:
+
+```text
+src/gpumetric_core/gpu_metric.c
+```
+
+Build manually from the repository:
 
 ```bash
 mkdir -p build
 cd build
+
 cmake -DCMAKE_BUILD_TYPE=Release ..
 cmake --build . --config Release
+
 cd ..
 ```
 
-Verify the resulting shared library:
+---
 
-```bash
-ls -lh build/libgpumetric.so
+# 42. Native Build Dependencies
+
+CMake searches for:
+
+```text
+nvml.h
 ```
 
-The resulting binary is the native implementation consumed by the Python FFI layer in repository-level development and testing workflows.
+and:
+
+```text
+libnvidia-ml.so
+```
+
+The current CMake configuration searches common locations including:
+
+```text
+/usr/include
+/usr/include/nvidia
+/usr/include/nvidia/gdk
+/usr/local/cuda/include
+```
+
+for the NVML header.
+
+For the NVML library it searches locations including:
+
+```text
+/usr/lib
+/usr/lib64
+/usr/lib/x86_64-linux-gnu
+/usr/local/cuda/lib64
+```
+
+If either the header or library cannot be found, CMake stops with an error.
 
 ---
 
-## 17. Testing
+# 43. CMake Configuration
 
-The project uses `pytest` for Python-level and integration testing.
+The project configures:
 
-Install the test dependency:
+```text
+C standard: C11
+C extensions: disabled
+Release optimization: -O3
+```
+
+The native target is:
+
+```text
+gpumetric
+```
+
+and its output name is:
+
+```text
+libgpumetric.so
+```
+
+The target links against:
+
+```text
+libnvidia-ml.so
+```
+
+through the NVML library discovered by CMake.
+
+---
+
+# 44. Python Packaging
+
+The Python build backend is:
+
+```text
+scikit-build-core
+```
+
+as configured in:
+
+```text
+pyproject.toml
+```
+
+The relevant configuration is:
+
+```toml
+[build-system]
+requires = [
+    "scikit-build-core>=0.11"
+]
+build-backend = "scikit_build_core.build"
+```
+
+The Python package uses the `src/` layout:
+
+```toml
+[tool.scikit-build]
+wheel.packages = ["src/gpumetric"]
+```
+
+The CMake build type is configured as:
+
+```toml
+[tool.scikit-build.cmake]
+build-type = "Release"
+```
+
+---
+
+# 45. Native Library Packaging
+
+CMake installs the native library into:
+
+```text
+gpumetric/lib
+```
+
+The relevant installation rule is:
+
+```cmake
+install(
+    TARGETS gpumetric
+    LIBRARY DESTINATION gpumetric/lib
+)
+```
+
+The Python FFI layer resolves the default native library path as:
+
+```text
+<installed Python package>/lib/libgpumetric.so
+```
+
+This allows the native implementation to be packaged together with the Python distribution.
+
+---
+
+# 46. FFI Layer
+
+The Python FFI implementation is:
+
+```text
+src/gpumetric/_ffi.py
+```
+
+It uses:
+
+```python
+import ctypes
+```
+
+The native shared library is loaded using:
+
+```python
+ctypes.CDLL(...)
+```
+
+The FFI layer defines the native structure:
+
+```python
+class GPUStates(ctypes.Structure):
+    ...
+```
+
+and configures the native function signatures:
+
+```python
+gpu_metric_init
+gpu_metric_sample
+gpu_metric_cleanup
+```
+
+---
+
+# 47. FFI Responsibility
+
+The FFI layer is intentionally thin.
+
+It is responsible for:
+
+* locating the native library
+* loading the shared library
+* defining native structure layouts
+* defining function argument types
+* defining function return types
+* calling native functions
+* passing native structures between Python and C
+
+The FFI layer should not become a second telemetry implementation.
+
+The hardware logic belongs in the native layer.
+
+The application-facing semantics belong in `GPUMetrics`.
+
+---
+
+# 48. C/Python ABI Contract
+
+The C structure:
+
+```c
+typedef struct {
+    uint32_t temp;
+    uint32_t util;
+    uint64_t mem_mib;
+    int64_t delta_mib;
+} GPUStats;
+```
+
+must have an exactly matching `ctypes.Structure`.
+
+The corresponding Python types are:
+
+```python
+ctypes.c_uint32
+ctypes.c_uint32
+ctypes.c_uint64
+ctypes.c_int64
+```
+
+ABI-compatible field order and field widths are critical.
+
+A mismatch can corrupt values without producing a Python exception.
+
+---
+
+# 49. ML Training Integration
+
+GPUMetric can run directly inside a training process:
+
+```python
+from gpumetric import GPUMetrics
+
+
+with GPUMetrics(device_index=0) as gpu:
+    for step, batch in enumerate(dataloader):
+        loss = train_step(batch)
+
+        stats = gpu.sample()
+
+        metrics = {
+            "step": step,
+            "loss": float(loss.item()),
+            "gpu_temperature_celsius": stats.temperature,
+            "gpu_utilization_percent": stats.utilization,
+            "gpu_memory_mib": stats.memory_mib,
+            "gpu_memory_delta_mib": stats.memory_delta_mib,
+        }
+
+        emit_metrics(metrics)
+```
+
+This allows application-level metrics to be correlated with GPU hardware state.
+
+For example:
+
+```text
+Application
+───────────
+step
+loss
+throughput
+batch size
+latency
+
+GPU
+───
+temperature
+utilization
+memory
+memory delta
+```
+
+---
+
+# 50. Inference Integration
+
+The same model can be used in inference workers.
+
+A service can correlate:
+
+```text
+request latency
+batch size
+throughput
+```
+
+with:
+
+```text
+GPU utilization
+GPU memory
+GPU temperature
+```
+
+without requiring a separate GPU monitoring process.
+
+---
+
+# 51. Observability Integration
+
+GPUMetric intentionally does not implement a telemetry backend.
+
+The application owns the next stage:
+
+```text
+GPU
+ │
+ ▼
+NVML
+ │
+ ▼
+GPUMetric
+ │
+ ▼
+Application
+ │
+ ├── Logs
+ ├── Metrics
+ ├── Events
+ └── Traces
+```
+
+Possible destinations include:
+
+* Prometheus exporters
+* OpenTelemetry
+* Kafka
+* message brokers
+* time-series databases
+* structured logging
+* internal monitoring services
+
+Example:
+
+```python
+stats = gpu.sample()
+
+record = {
+    "gpu_temperature_celsius": stats.temperature,
+    "gpu_utilization_percent": stats.utilization,
+    "gpu_memory_mib": stats.memory_mib,
+    "gpu_memory_delta_mib": stats.memory_delta_mib,
+}
+```
+
+GPUMetric stops at the application boundary.
+
+---
+
+# 52. Separation of Responsibilities
+
+## GPUMetric owns
+
+```text
+NVML communication
+GPU selection
+GPU telemetry
+sampling state
+memory delta calculation
+native lifecycle
+Python/native ABI
+```
+
+## Application owns
+
+```text
+sampling schedule
+metric naming
+aggregation
+serialization
+transport
+storage
+alerting
+visualization
+distributed processing
+```
+
+This separation keeps GPUMetric independent of any specific observability stack.
+
+---
+
+# 53. Testing
+
+The repository uses `pytest`.
+
+Install it if necessary:
 
 ```bash
 python3.11 -m pip install pytest
 ```
 
-Run the complete suite:
+Run the test suite:
 
 ```bash
 python3.11 -m pytest
@@ -711,104 +1763,146 @@ Run in verbose mode:
 python3.11 -m pytest -v
 ```
 
-The `-v` flag enables verbose pytest output and reports each test individually.
+---
 
-Example:
+# 54. Current Test Coverage
+
+The repository currently contains tests for:
 
 ```text
-test_context_manager.py::test_context_manager PASSED
-test_gpu_metrics.py::test_gpu_metrics_initialization PASSED
-test_gpu_metrics.py::test_gpu_metrics_sample PASSED
-test_gpu_metrics.py::test_gpu_metrics_sample_values PASSED
-test_gpu_metrics.py::test_gpu_metrics_multiple_samples PASSED
-test_gpu_metrics_reinitialization.py::test_gpu_metrics_reinitialization PASSED
-test_gpu_stats.py::test_gpu_stats_creation PASSED
-test_gpu_stats.py::test_gpu_stats_types PASSED
-test_import.py::test_import_gpumetric PASSED
-test_import.py::test_public_api PASSED
+test_context_manager.py
+test_device_index_type.py
+test_gpu_metrics.py
+test_gpu_metrics_reinitialization.py
+test_gpu_stats.py
+test_import.py
+test_lifecycle.py
 ```
 
-A successful test run reports all tests as passed.
+The tests cover areas including:
 
-### 17.1 Integration Test Requirements
-
-Integration tests that call `GPUMetrics(device_index=0)` require:
-
-- Linux x86-64
-- Ubuntu or a compatible Linux environment
-- NVIDIA GPU
-- working NVIDIA driver
-- working NVML
-- CPython 3.11
-
-A test environment without an accessible NVIDIA GPU cannot execute the full runtime integration path successfully.
+* package import
+* public API
+* `GPUStats` creation
+* `GPUStats` field types
+* `GPUMetrics` initialization
+* sampling
+* telemetry value types
+* utilization range
+* multiple samples
+* context-manager behavior
+* reinitialization
+* device-index validation
 
 ---
 
-## 18. Clean Installation Test
+# 55. Integration Test Requirements
 
-When validating a package build or release candidate, install it into a clean environment rather than relying only on an existing development environment.
+Tests that instantiate:
+
+```python
+GPUMetrics(device_index=0)
+```
+
+require:
+
+* Linux x86-64
+* Ubuntu or compatible Linux environment
+* CPython 3.11
+* NVIDIA GPU
+* functional NVIDIA driver
+* functional NVML
+* valid GPU device index
+
+A CPU-only environment cannot execute the complete hardware integration path.
+
+---
+
+# 56. Testing the Published Artifact
+
+A local source-tree test and a clean package installation validate different things.
+
+Source validation:
+
+```text
+Repository
+    │
+    ▼
+Local build
+    │
+    ▼
+Local environment
+    │
+    ▼
+Tests
+```
+
+Package validation:
+
+```text
+PyPI
+    │
+    ▼
+pip install
+    │
+    ▼
+Clean virtual environment
+    │
+    ▼
+Python package
+    │
+    ▼
+Native shared library
+    │
+    ▼
+NVML
+    │
+    ▼
+GPU
+```
+
+The second path is important because it validates the artifact users actually install.
 
 Example:
 
 ```bash
 python3.11 -m venv /tmp/gpumetric-test
 source /tmp/gpumetric-test/bin/activate
+
 python -m pip install --upgrade pip
 python -m pip install gpumetric
 ```
 
-Verify the public API:
+Verify:
 
 ```bash
 python -c "from gpumetric import GPUMetrics, GPUStats; print(GPUMetrics, GPUStats)"
 ```
 
-Run the integration tests if the environment has access to the GPU:
+Then:
 
 ```bash
-python -m pytest -v
+python - <<'PY'
+from gpumetric import GPUMetrics
+
+with GPUMetrics(device_index=0) as gpu:
+    print(gpu.sample())
+PY
 ```
-
-This is an important distinction:
-
-```text
-git checkout
-    ↓
-local source
-    ↓
-works in developer environment
-```
-
-is not equivalent to:
-
-```text
-PyPI
-    ↓
-pip install
-    ↓
-clean virtual environment
-    ↓
-import
-    ↓
-NVML
-    ↓
-GPU
-```
-
-The second path validates the artifact that users actually install.
 
 ---
 
-## 19. Troubleshooting
+# 57. Troubleshooting
 
-### `nvidia-smi` fails
+## `nvidia-smi` fails
 
-First resolve the NVIDIA driver or host GPU issue.
+Fix the NVIDIA driver/GPU environment first.
 
-GPUMetric depends on the same underlying NVIDIA driver/NVML environment.
+GPUMetric depends on the same underlying NVIDIA management stack.
 
-### `pip install gpumetric` fails
+---
+
+## Python import fails
 
 Check:
 
@@ -817,44 +1911,52 @@ python3.11 --version
 python3.11 -m pip --version
 ```
 
-The current package target is CPython 3.11 on Linux x86-64.
-
-Also check that pip is using PyPI rather than a private or stale package index:
+Then verify the package:
 
 ```bash
-python3.11 -m pip config list
+python3.11 -m pip show gpumetric
 ```
 
-### Import succeeds but sampling fails
+---
 
-Verify:
+## Import succeeds but `GPUMetrics` initialization fails
+
+Run:
 
 ```bash
 nvidia-smi
 ```
 
-Then test the actual API:
+Then inspect the exact Python exception:
 
-```bash
-python3.11 - <<'PY'
+```python
 from gpumetric import GPUMetrics
 
 with GPUMetrics(device_index=0) as gpu:
     print(gpu.sample())
-PY
 ```
 
-If initialization fails, investigate the NVIDIA driver, NVML availability, device index, and runtime permissions.
+Determine whether the failure is:
 
-### Invalid device index
+```text
+NVML initialization
+GPU detection
+device selection
+native library loading
+GPU communication
+```
 
-Validate the available devices:
+---
+
+## Invalid device index
+
+List available GPUs:
 
 ```bash
 nvidia-smi -L
 ```
 
-Then use a valid device index:
+Then select a valid index:
 
 ```python
 GPUMetrics(device_index=0)
@@ -862,9 +1964,72 @@ GPUMetrics(device_index=0)
 
 ---
 
-## 20. Example: Minimal Monitoring Service
+## Native library not found
 
-A long-running service should normally initialize the monitor once and reuse it:
+The Python FFI expects the default library at:
+
+```text
+gpumetric/lib/libgpumetric.so
+```
+
+If using a custom development build, provide an explicit path:
+
+```python
+from gpumetric import GPUMetrics
+
+gpu = GPUMetrics(
+    device_index=0,
+    lib_path="/path/to/libgpumetric.so",
+)
+```
+
+---
+
+# 58. Production Lifecycle
+
+A typical production GPU worker should follow:
+
+```text
+1. Start process
+       │
+       ▼
+2. Validate NVIDIA runtime
+       │
+       ▼
+3. Initialize GPUMetrics
+       │
+       ▼
+4. Run workload
+       │
+       ├── sample()
+       ├── sample()
+       ├── sample()
+       │
+       ▼
+5. Export telemetry
+       │
+       ▼
+6. Cleanup
+       │
+       ▼
+7. Process shutdown
+```
+
+Recommended principles:
+
+1. Validate the NVIDIA runtime.
+2. Initialize `GPUMetrics` once.
+3. Reuse the monitoring object.
+4. Sample at the application's required interval.
+5. Treat `GPUStats` as an observation.
+6. Export telemetry through existing application infrastructure.
+7. Handle monitoring failures explicitly.
+8. Keep storage and transport outside GPUMetric.
+9. Do not assume multiple `GPUMetrics` objects represent independent native contexts.
+
+---
+
+# 59. Minimal Monitoring Service
 
 ```python
 import time
@@ -885,6 +2050,7 @@ def main() -> None:
             }
 
             print(record)
+
             time.sleep(1)
 
 
@@ -892,56 +2058,144 @@ if __name__ == "__main__":
     main()
 ```
 
-The service can then replace the `print(record)` operation with an application-specific exporter.
-
----
-
-## 21. Example: Correlating GPU Telemetry with Training State
+The application can replace:
 
 ```python
-from gpumetric import GPUMetrics
-
-
-with GPUMetrics(device_index=0) as gpu:
-    for step, batch in enumerate(dataloader):
-        loss = train_step(batch)
-        stats = gpu.sample()
-
-        metrics = {
-            "step": step,
-            "loss": float(loss.item()),
-            "gpu_temperature_celsius": stats.temperature,
-            "gpu_utilization_percent": stats.utilization,
-            "gpu_memory_mib": stats.memory_mib,
-            "gpu_memory_delta_mib": stats.memory_delta_mib,
-        }
-
-        emit_metrics(metrics)
+print(record)
 ```
 
-This pattern keeps hardware telemetry close to the application state that produced the workload.
+with its own telemetry exporter.
 
 ---
 
-## 22. Project Boundaries
+# 60. API Summary
 
-GPUMetric is a telemetry component, not a complete observability system.
+## Import
 
-It does not provide, by itself:
+```python
+from gpumetric import GPUMetrics, GPUStats
+```
 
-- metric storage
-- dashboards
-- alerting
-- distributed aggregation
-- message-bus delivery
-- time-series querying
-- GPU scheduling
-- CUDA memory profiling
-- model-level performance profiling
+## Initialize
 
-Those capabilities belong to the surrounding infrastructure.
+```python
+gpu = GPUMetrics(device_index=0)
+```
 
-The intended boundary is:
+## Preferred lifecycle
+
+```python
+with GPUMetrics(device_index=0) as gpu:
+    stats = gpu.sample()
+```
+
+## Sample
+
+```python
+stats = gpu.sample()
+```
+
+## Read telemetry
+
+```python
+stats.temperature
+stats.utilization
+stats.memory_mib
+stats.memory_delta_mib
+```
+
+## Explicit cleanup
+
+```python
+gpu.cleanup()
+```
+
+---
+
+# 61. Architecture Summary
+
+The complete runtime architecture is:
+
+```text
+                         Application
+                              │
+                              ▼
+                         GPUMetrics
+                              │
+                              ▼
+                         ctypes FFI
+                              │
+                              ▼
+                           C ABI
+                              │
+                              ▼
+                       libgpumetric.so
+                              │
+                              ▼
+                             NVML
+                              │
+                              ▼
+                       NVIDIA Driver
+                              │
+                              ▼
+                           GPU
+```
+
+Each layer has a defined responsibility:
+
+```text
+Application
+    Owns workload and observability.
+
+GPUMetrics
+    Owns the Python-facing telemetry lifecycle.
+
+GPUStats
+    Represents one immutable telemetry observation.
+
+ctypes FFI
+    Bridges Python and native code.
+
+C ABI
+    Defines the Python/native contract.
+
+libgpumetric.so
+    Implements native telemetry collection.
+
+NVML
+    Provides NVIDIA GPU management access.
+
+NVIDIA Driver
+    Provides the underlying GPU management stack.
+
+GPU
+    Provides the physical hardware state.
+```
+
+The central architectural principle is:
+
+> **GPUMetric collects GPU state; the application decides what to do with it.**
+
+---
+
+# 62. Current Project Scope
+
+GPUMetric is a GPU telemetry collection library.
+
+It is not:
+
+* a GPU scheduler
+* a CUDA profiler
+* a CUDA memory profiler
+* a Prometheus server
+* an OpenTelemetry Collector
+* a message broker
+* a time-series database
+* a dashboard
+* an alerting platform
+* a distributed observability system
+
+Its boundary is:
 
 ```text
 GPU
@@ -953,108 +2207,57 @@ NVML
 GPUMetric
  │
  ▼
-Application
+GPUStats
  │
- ├── logging
- ├── metrics
- ├── tracing
- ├── message bus
- └── monitoring backend
+ ▼
+Application
 ```
+
+Everything after the application boundary is intentionally outside the library.
 
 ---
 
-## 23. Recommended Production Pattern
+# 63. Documentation Policy
 
-For a long-running GPU service:
+This document is the technical reference for GPUMetric.
 
-1. Validate the NVIDIA driver with `nvidia-smi`.
-2. Install GPUMetric into an isolated CPython 3.11 environment.
-3. Initialize `GPUMetrics` once for the lifetime of the monitoring component.
-4. Call `sample()` at the desired telemetry interval.
-5. Treat `GPUStats` as an immutable snapshot of the current observation.
-6. Export the values into the application's existing observability pipeline.
-7. Log or surface initialization/sampling failures instead of silently discarding them.
+The repository README is intentionally concise and should contain only:
 
-A typical service topology is:
+* project description
+* architecture overview
+* feature summary
+* supported environment
+* installation
+* minimal usage
+* documentation link
+* basic testing information
+* repository structure
+* license
+
+Detailed implementation and operational information belongs in:
 
 ```text
-                 GPU Worker
-                     │
-          ┌──────────┴──────────┐
-          │                     │
-      ML Runtime            GPUMetric
-          │                     │
-          │                  NVML/GPU
-          │                     │
-          └──────────┬──────────┘
-                     ▼
-                 Telemetry
-                     │
-          ┌──────────┼──────────┐
-          ▼          ▼          ▼
-        Logs      Metrics    Tracing
+docs/DOCS.md
 ```
+
+Documentation should be updated when changes affect:
+
+* public API
+* native ABI
+* FFI structure definitions
+* runtime lifecycle
+* telemetry semantics
+* supported environments
+* package layout
+* build process
+* testing
+* error handling
+* deployment behavior
 
 ---
 
-## 24. API Summary
+# 64. License
 
-### Import
+GPUMetric is licensed under the GNU General Public License v3.0 (GPLv3).
 
-```python
-from gpumetric import GPUMetrics, GPUStats
-```
-
-### Initialize
-
-```python
-gpu = GPUMetrics(device_index=0)
-```
-
-### Preferred lifecycle
-
-```python
-with GPUMetrics(device_index=0) as gpu:
-    stats = gpu.sample()
-```
-
-### Sample
-
-```python
-stats = gpu.sample()
-```
-
-### Read telemetry
-
-```python
-stats.temperature
-stats.utilization
-stats.memory_mib
-stats.memory_delta_mib
-```
-
----
-
-## 25. Documentation Scope
-
-This document covers the current operational interface:
-
-- supported environment
-- installation
-- NVIDIA host validation
-- Python API
-- device selection
-- sampling
-- memory delta semantics
-- context-manager lifecycle
-- ML integration
-- telemetry integration
-- error handling
-- native/FFI architecture
-- local development
-- testing
-- clean installation validation
-- troubleshooting
-
-Implementation details that are not part of the public API should be treated as internal and may change independently of the application-facing interface.
+See the repository `LICENSE` file for the complete license text and terms.
