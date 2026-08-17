@@ -53,13 +53,56 @@ jobs:
           python -m pip install build auditwheel
 
 
-      - name: Install system dependencies
-        timeout-minutes: 5
+      - name: Configure APT mirror
         run: |
-          sudo sed -i \
-            's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
-            /etc/apt/sources.list.d/ubuntu.sources
+          echo "=== Current APT mirror configuration ==="
 
+          sudo cat /etc/apt/apt-mirrors.txt || true
+
+          sudo grep -R \
+            "azure.archive.ubuntu.com" \
+            /etc/apt \
+            --exclude-dir=lists \
+            --exclude-dir=cache \
+            || true
+
+          echo "=== Switching Ubuntu mirror ==="
+
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            sudo sed -i \
+              's|http://azure.archive.ubuntu.com/ubuntu|http://archive.ubuntu.com/ubuntu|g' \
+              /etc/apt/apt-mirrors.txt
+
+            sudo sed -i \
+              's|https://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
+              /etc/apt/apt-mirrors.txt
+          fi
+
+          if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
+            sudo sed -i \
+              's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
+              /etc/apt/sources.list.d/ubuntu.sources
+
+            sudo sed -i \
+              's|https://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
+              /etc/apt/sources.list.d/ubuntu.sources
+          fi
+
+          echo "=== APT configuration after replacement ==="
+
+          sudo cat /etc/apt/apt-mirrors.txt || true
+
+          sudo grep -R \
+            "azure.archive.ubuntu.com" \
+            /etc/apt \
+            --exclude-dir=lists \
+            --exclude-dir=cache \
+            || true
+
+
+      - name: Install system dependencies
+        timeout-minutes: 20
+        run: |
           sudo apt-get update
 
           sudo apt-get install -y \
@@ -71,10 +114,31 @@ jobs:
       - name: Verify NVML development files
         run: |
           echo "=== NVML header ==="
+
           dpkg -L libnvidia-ml-dev | grep '/nvml.h$'
 
           echo "=== NVML library ==="
+
           dpkg -L libnvidia-ml-dev | grep 'libnvidia-ml.so' || true
+
+          echo "=== NVML files ==="
+
+          find /usr -name 'nvml.h' -o -name 'libnvidia-ml.so*' 2>/dev/null || true
+
+
+      - name: Show build tools
+        run: |
+          echo "=== Python ==="
+          python --version
+
+          echo "=== CMake ==="
+          cmake --version
+
+          echo "=== GCC ==="
+          gcc --version
+
+          echo "=== G++ ==="
+          g++ --version
 
 
       - name: Build Linux wheel
@@ -92,6 +156,9 @@ jobs:
           echo "=== Built wheels ==="
           ls -lah dist/
 
+          echo "=== Wheel filenames ==="
+          find dist -maxdepth 1 -type f -name '*.whl' -print
+
 
       - name: Repair Linux wheel
         run: |
@@ -104,6 +171,7 @@ jobs:
             dist/*.whl
 
           rm -f dist/*.whl
+
           mv repaired/*.whl dist/
 
 
@@ -113,7 +181,9 @@ jobs:
           ls -lah dist/
 
           echo "=== Wheel contents ==="
-          python -m zipfile -l dist/*.whl
+
+          python -m zipfile \
+            -l dist/*.whl
 
 
       - name: Upload distributions
@@ -137,7 +207,6 @@ jobs:
       name: pypi
       url: https://pypi.org/p/gpumetric
 
-
     steps:
       - name: Retrieve all release distributions
         uses: actions/download-artifact@v4
@@ -150,7 +219,16 @@ jobs:
       - name: Verify distributions before publishing
         run: |
           echo "=== Packages to publish ==="
+
           ls -lah dist/
+
+          echo "=== Wheel files ==="
+
+          find dist \
+            -maxdepth 1 \
+            -type f \
+            -name '*.whl' \
+            -print
 
 
       - name: Publish to PyPI
