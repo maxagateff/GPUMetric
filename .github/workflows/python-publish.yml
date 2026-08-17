@@ -1,5 +1,4 @@
 # This workflow builds and publishes the GPUMetric Python package to PyPI.
-
 name: Upload Python Package
 
 on:
@@ -17,6 +16,10 @@ jobs:
     name: Build release distributions
     runs-on: ubuntu-latest
 
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -24,7 +27,12 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
+
+      - name: Show Python version
+        run: |
+          python --version
+          python -c "import sys; print(sys.version)"
 
       - name: Install Python build dependencies
         run: |
@@ -70,14 +78,12 @@ jobs:
       - name: Verify repaired wheel
         run: |
           ls -lah dist/
-
-          python -m zipfile \
-            -l dist/*.whl
+          python -m zipfile -l dist/*.whl
 
       - name: Upload distributions
         uses: actions/upload-artifact@v4
         with:
-          name: release-dists
+          name: release-dists-py${{ matrix.python-version }}
           path: dist/
           if-no-files-found: error
 
@@ -94,10 +100,16 @@ jobs:
       url: https://pypi.org/p/gpumetric
 
     steps:
-      - name: Retrieve release distributions
+      - name: Retrieve Python 3.11 distributions
         uses: actions/download-artifact@v4
         with:
-          name: release-dists
+          name: release-dists-py3.11
+          path: dist/
+
+      - name: Retrieve Python 3.12 distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: release-dists-py3.12
           path: dist/
 
       - name: Verify distributions before publishing
