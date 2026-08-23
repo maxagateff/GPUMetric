@@ -1,8 +1,8 @@
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.18)
 
 project(
-        GPUMetric
-        VERSION 0.1.1
+        gpumetric
+        VERSION 0.1.2
         LANGUAGES C
 )
 
@@ -15,56 +15,22 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
 # ---------------------------------------------------------
-# NVIDIA NVML
+# Sources
 # ---------------------------------------------------------
 
-find_path(
-        NVML_INCLUDE_DIR
-        NAMES nvml.h
-        PATHS
-        /usr/include
-        /usr/include/nvidia
-        /usr/include/nvidia/gdk
-        /usr/local/cuda/include
+set(GPUMETRIC_SOURCES
+        src/gpumetric_core/gpu_metric.c
+        src/gpumetric_core/nvml_loader.c
 )
-
-if(NOT NVML_INCLUDE_DIR)
-    message(FATAL_ERROR
-            "NVIDIA NVML header (nvml.h) not found. "
-            "Please install the NVIDIA NVML development package."
-    )
-endif()
-
-message(STATUS "NVML include directory: ${NVML_INCLUDE_DIR}")
-
-find_library(
-        NVML_LIBRARY
-        NAMES nvidia-ml
-        PATHS
-        /usr/lib
-        /usr/lib64
-        /usr/lib/x86_64-linux-gnu
-        /usr/local/cuda/lib64
-)
-
-if(NOT NVML_LIBRARY)
-    message(FATAL_ERROR
-            "NVIDIA NVML library (libnvidia-ml.so) not found. "
-            "Please install the NVIDIA NVML development package or "
-            "NVIDIA driver development files."
-    )
-endif()
-
-message(STATUS "NVML library: ${NVML_LIBRARY}")
 
 # ---------------------------------------------------------
-# GPUMetric native library
+# Shared library
 # ---------------------------------------------------------
 
 add_library(
         gpumetric
         SHARED
-        src/gpumetric_core/gpu_metric.c
+        ${GPUMETRIC_SOURCES}
 )
 
 # ---------------------------------------------------------
@@ -73,46 +39,126 @@ add_library(
 
 target_include_directories(
         gpumetric
+        PUBLIC
+        ${PROJECT_SOURCE_DIR}/src/gpumetric_core
+)
+
+# ---------------------------------------------------------
+# NVIDIA NVML headers
+#
+# NVML is loaded dynamically at runtime through dlopen().
+# We DO NOT link against libnvidia-ml.so.
+# ---------------------------------------------------------
+
+find_path(
+        NVML_INCLUDE_DIR
+        NAMES nvml.h
+        PATHS
+        /usr/include
+        /usr/local/include
+        /usr/local/cuda/include
+        /usr/local/cuda-*/include
+)
+
+if(NOT NVML_INCLUDE_DIR)
+    message(
+            FATAL_ERROR
+            "NVIDIA NVML header (nvml.h) not found."
+    )
+endif()
+
+message(
+        STATUS
+        "NVML include directory: ${NVML_INCLUDE_DIR}"
+)
+
+target_include_directories(
+        gpumetric
         PRIVATE
         ${NVML_INCLUDE_DIR}
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/gpumetric_core
 )
 
 # ---------------------------------------------------------
-# Release optimization
+# libdl
+#
+# Required for:
+#   dlopen()
+#   dlsym()
+#   dlclose()
 # ---------------------------------------------------------
 
-target_compile_options(
-        gpumetric
-        PRIVATE
-        $<$<CONFIG:Release>:-O3>
-)
+if(UNIX AND NOT APPLE)
+    target_link_libraries(
+            gpumetric
+            PRIVATE
+            dl
+    )
+endif()
 
 # ---------------------------------------------------------
-# Link NVML
+# Compiler warnings
 # ---------------------------------------------------------
 
-target_link_libraries(
-        gpumetric
-        PRIVATE
-        ${NVML_LIBRARY}
-)
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+            gpumetric
+            PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+    )
+endif()
 
 # ---------------------------------------------------------
-# Native library properties
+# Position Independent Code
 # ---------------------------------------------------------
 
 set_target_properties(
         gpumetric
         PROPERTIES
-        OUTPUT_NAME "gpumetric"
+        POSITION_INDEPENDENT_CODE ON
 )
 
 # ---------------------------------------------------------
-# Install native library into Python package
+# Output name
 # ---------------------------------------------------------
+
+set_target_properties(
+        gpumetric
+        PROPERTIES
+        OUTPUT_NAME gpumetric
+)
+
+# ---------------------------------------------------------
+# Install
+# ---------------------------------------------------------
+
+include(GNUInstallDirs)
 
 install(
         TARGETS gpumetric
-        LIBRARY DESTINATION gpumetric/lib
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
+
+install(
+        FILES
+        src/gpumetric_core/gpu_metric.h
+        DESTINATION
+        ${CMAKE_INSTALL_INCLUDEDIR}/gpumetric
+)
+
+# ---------------------------------------------------------
+# Build information
+# ---------------------------------------------------------
+
+message(STATUS "")
+message(STATUS "========== GPUMetric ==========")
+message(STATUS "Version:        ${PROJECT_VERSION}")
+message(STATUS "C standard:     C${CMAKE_C_STANDARD}")
+message(STATUS "NVML loading:   runtime (dlopen)")
+message(STATUS "NVML linking:   disabled")
+message(STATUS "NVML include:   ${NVML_INCLUDE_DIR}")
+message(STATUS "================================")
+message(STATUS "")
