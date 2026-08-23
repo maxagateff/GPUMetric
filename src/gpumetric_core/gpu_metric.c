@@ -1,23 +1,24 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "gpu_metric.h"
+#include "nvml_loader.h"
 
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
 #include <nvml.h>
-#include "nvml_loader.h"
+
 
 /*
  * Historical GPU memory state used to calculate
  * the difference between consecutive samples.
  */
-
 typedef struct {
     uint64_t previous_mem_mib;
     int has_previous_sample;
 } MemoryCache;
+
 
 /*
  * Native GPUMetric state.
@@ -38,14 +39,15 @@ int gpu_metric_init(unsigned int device_index)
 {
     /*
      * Initialization is idempotent for the current context.
-     *
-     * If the library is already initialized, do not call
-     * nvmlInit() a second time.
      */
     if (initialized) {
         return GPU_METRIC_SUCCESS;
     }
 
+    /*
+     * Dynamically load libnvidia-ml.so.1 and resolve
+     * the required NVML symbols.
+     */
     if (gpumetric_nvml_load(&nvml) != 0) {
         fprintf(
             stderr,
@@ -56,14 +58,23 @@ int gpu_metric_init(unsigned int device_index)
         return GPU_METRIC_ERR_NVML;
     }
 
+    /*
+     * Initialize NVML.
+     */
     nvmlReturn_t ret = nvml.Init_v2();
 
     if (ret != NVML_SUCCESS) {
         fprintf(
             stderr,
-            "[GPUMETRIC] nvmlInit failed: %s\n",
+            "[GPUMETRIC] nvmlInit_v2 failed: %s\n",
             nvml.ErrorString(ret)
         );
+
+        /*
+         * NVML initialization failed, but the shared library
+         * was successfully opened by dlopen().
+         */
+        gpumetric_nvml_unload(&nvml);
 
         return GPU_METRIC_ERR_NVML;
     }
@@ -78,14 +89,10 @@ int gpu_metric_init(unsigned int device_index)
     if (ret != NVML_SUCCESS) {
         fprintf(
             stderr,
-            "[GPUMETRIC] nvmlDeviceGetCount failed: %s\n",
+            "[GPUMETRIC] nvmlDeviceGetCount_v2 failed: %s\n",
             nvml.ErrorString(ret)
         );
 
-        /*
-         * NVML was successfully initialized, so it must
-         * be shut down before returning.
-         */
         nvml.Shutdown();
         gpumetric_nvml_unload(&nvml);
 
@@ -136,12 +143,14 @@ int gpu_metric_init(unsigned int device_index)
     if (ret != NVML_SUCCESS) {
         fprintf(
             stderr,
-            "[GPUMETRIC] nvmlDeviceGetHandleByIndex failed: %s\n",
+            "[GPUMETRIC] nvmlDeviceGetHandleByIndex_v2 failed: %s\n",
             nvml.ErrorString(ret)
         );
 
         nvml.Shutdown();
         gpumetric_nvml_unload(&nvml);
+
+        memset(&device, 0, sizeof(device));
 
         return GPU_METRIC_ERR_DEVICE;
     }
@@ -173,15 +182,24 @@ int gpu_metric_sample(GPUStats *out)
         return GPU_METRIC_ERR_ARGUMENT;
     }
 
+    /*
+     * Do not partially modify the output structure if
+     * one of the NVML calls fails.
+     */
     unsigned int temp = 0;
 
     nvmlUtilization_t util;
     nvmlMemory_t mem;
 
+    memset(&util, 0, sizeof(util));
+    memset(&mem, 0, sizeof(mem));
+
+    nvmlReturn_t ret;
+
     /*
      * GPU temperature.
      */
-    nvml.DeviceGetTemperature(
+    ret = nvml.DeviceGetTemperature(
         device,
         NVML_TEMPERATURE_GPU,
         &temp
@@ -238,8 +256,8 @@ int gpu_metric_sample(GPUStats *out)
      *
      * Convert bytes -> MiB.
      */
-    uint64_t current_mib =
-        mem.used / (1024ULL * 1024ULL);
+    const uint64_t current_mib =
+        (uint64_t) mem.used / (1024ULL * 1024ULL);
 
     /*
      * Calculate signed memory delta.
@@ -262,7 +280,8 @@ int gpu_metric_sample(GPUStats *out)
     cache.has_previous_sample = 1;
 
     /*
-     * Populate the public C structure.
+     * Populate the public C structure only after the complete
+     * sample has been collected successfully.
      */
     out->temp = temp;
     out->util = util.gpu;
@@ -280,18 +299,40 @@ void gpu_metric_cleanup(void)
 {
     /*
      * cleanup() is intentionally idempotent.
-     *
-     * Calling cleanup() on an already-cleaned-up context
-     * is safe.
      */
     if (initialized) {
-        nvmlShutdown();
+        /*
+         * IMPORTANT:
+         *
+         * Do NOT call nvmlShutdown() directly here.
+         *
+         * GPUMetric uses runtime NVML loading through dlopen/dlsym,
+         * therefore the shutdown function must also be invoked
+         * through the resolved function pointer.
+         */
+        if (nvml.Shutdown) {
+            nvmlReturn_t ret = nvml.Shutdown();
+
+            if (ret != NVML_SUCCESS && nvml.ErrorString) {
+                fprintf(
+                    stderr,
+                    "[GPUMETRIC] nvmlShutdown failed: %s\n",
+                    nvml.ErrorString(ret)
+                );
+            }
+        }
+
         initialized = 0;
     }
+
+    /*
+     * Close libnvidia-ml.so.1 and clear all resolved
+     * function pointers.
+     */
     gpumetric_nvml_unload(&nvml);
 
     /*
-     * Always reset sampling state.
+     * Reset sampling state.
      *
      * This guarantees that a later init() starts a completely
      * new sampling sequence.
@@ -299,10 +340,7 @@ void gpu_metric_cleanup(void)
     memset(&cache, 0, sizeof(cache));
 
     /*
-     * Clear the device handle as well.
-     *
-     * nvmlDevice_t is an opaque NVML handle, so zeroing it
-     * is only used here as local state hygiene.
+     * Clear the opaque device handle.
      */
     memset(&device, 0, sizeof(device));
 }
