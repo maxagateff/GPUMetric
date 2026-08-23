@@ -7,7 +7,7 @@
 
 #include <nvml.h>
 
-#indef __cplusplus
+#ifdef __cplusplus
 extern "C" {
 #endif
 
