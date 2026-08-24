@@ -1,6 +1,6 @@
 # GPUMetric Technical Documentation
 
-Version 0.1.2
+Version 0.1.3
 
 GPUMetric is a Linux-native NVIDIA GPU telemetry library. It combines a small C core, runtime NVML symbol loading, and a Python `ctypes` interface. This document describes the current implementation, including its limitations.
 
@@ -626,7 +626,7 @@ GPUMetric/
 
 ## 22. Versioning and Compatibility
 
-The project is currently version 0.1.2 and classified as alpha.
+The project is currently version 0.1.3 and classified as alpha.
 
 Until version 1.0:
 
@@ -639,7 +639,7 @@ Until version 1.0:
 Pin a tested version in production:
 
 ```text
-gpumetric==0.1.2
+gpumetric==0.1.3
 ```
 
 ## 23. License
