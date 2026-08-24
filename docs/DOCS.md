@@ -532,7 +532,7 @@ It also exports the public exception hierarchy.
 The package version currently defined by the source is:
 
 ```python
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 ```
 
 ---
