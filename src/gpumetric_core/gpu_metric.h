@@ -9,6 +9,7 @@ typedef struct {
     uint32_t util;      /**< GPU utilization rate as a percentage (0-100) */
     uint64_t mem_mib;    /**< Current memory usage in Megabytes (MIB) */
     int64_t delta_mib;   /**< Memory usage difference compared to the previous sample */
+    uint64_t reserved_mem_mib; /**< Memory reserved by the driver or firmware */
 } GPUStats;
 
 /**

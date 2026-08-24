@@ -691,20 +691,25 @@ Current GPU memory usage is exposed through:
 
 ```python
 stats.memory_mib
+stats.memory_reserved_mib
 ```
 
 The native implementation obtains memory information through:
 
 ```c
-nvmlDeviceGetMemoryInfo()
+nvmlDeviceGetMemoryInfo_v2()
 ```
+
+When the v2 symbol is unavailable, GPUMetric falls back to
+`nvmlDeviceGetMemoryInfo()` for compatibility with older drivers.
 
 NVML reports memory in bytes.
 
 GPUMetric converts the used memory value to MiB:
 
 ```text
-memory_mib = used_bytes / (1024 * 1024)
+memory_mib = allocated_bytes / (1024 * 1024)
+memory_reserved_mib = reserved_bytes / (1024 * 1024)
 ```
 
 Example:
@@ -713,7 +718,11 @@ Example:
 397
 ```
 
-means approximately 397 MiB of reported used GPU memory after the integer conversion.
+means approximately 397 MiB of allocated GPU memory after the integer conversion.
+
+The v2 query reports driver- and firmware-reserved memory separately. The
+legacy query may include that reservation in its used-memory value, so
+`memory_reserved_mib` is zero when the runtime requires the legacy fallback.
 
 ---
 
@@ -801,19 +810,13 @@ The corresponding `ctypes` representation must therefore be:
 ("delta_mib", ctypes.c_int64)
 ```
 
-The current FFI implementation in `develop` uses:
+The FFI implementation uses:
 
 ```python
 ("delta_mib", ctypes.c_int64)
 ```
 
-This is an ABI mismatch.
-
-A negative native `int64_t` value can therefore be interpreted as a very large positive `uint64_t` value in Python.
-
-The FFI definition should be corrected before relying on negative memory deltas.
-
-The correct mapping is:
+This correctly matches the signed native field and preserves negative memory deltas. The complete mapping is:
 
 ```python
 class GPUStates(ctypes.Structure):
@@ -822,6 +825,7 @@ class GPUStates(ctypes.Structure):
         ("utils", ctypes.c_uint32),
         ("mem_mib", ctypes.c_uint64),
         ("delta_mib", ctypes.c_int64),
+        ("reserved_mem_mib", ctypes.c_uint64),
     ]
 ```
 

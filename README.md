@@ -89,6 +89,7 @@ stats.temperature
 stats.utilization
 stats.memory_mib
 stats.memory_delta_mib
+stats.memory_reserved_mib
 ```
 
 A sample contains:
@@ -99,10 +100,13 @@ A sample contains:
 | `utilization`      | GPU utilization percentage                                    |
 | `memory_mib`       | Current GPU memory usage in MiB                               |
 | `memory_delta_mib` | Change in reported GPU memory usage since the previous sample |
+| `memory_reserved_mib` | Memory reserved for driver or firmware use in MiB          |
 
 `GPUStats` is an immutable Python dataclass.
 
-The memory delta is a telemetry signal. It is **not** a CUDA memory profiler and does not identify individual allocations, tensors, processes, or CUDA subsystems.
+GPUMetric uses `nvmlDeviceGetMemoryInfo_v2` when the installed driver provides it. This keeps driver- and firmware-reserved memory separate from allocated memory. Older drivers fall back to the legacy NVML query, whose used-memory value can include the system reservation.
+
+The memory delta is a device-wide telemetry signal. It is **not** a CUDA memory profiler and does not identify individual allocations, tensors, processes, or CUDA subsystems.
 
 ---
 

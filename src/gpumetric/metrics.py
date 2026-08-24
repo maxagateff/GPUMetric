@@ -30,12 +30,16 @@ class GPUStats:
         memory_delta_mib:
             Change in used GPU memory since the previous
             sample in MiB.
+
+        memory_reserved_mib:
+            GPU memory reserved for driver or firmware use in MiB.
     """
 
     temperature: int
     utilization: int
     memory_mib: int
     memory_delta_mib: int
+    memory_reserved_mib: int = 0
 
 
 class GPUMetrics:
@@ -48,7 +52,7 @@ class GPUMetrics:
             device_index: int = 0,
             lib_path: str | None = None,
     ) -> None:
-        if not isinstance(device_index, int):
+        if isinstance(device_index, bool) or not isinstance(device_index, int):
             raise GPUMetricArgumentError(
                 "device_index must be an integer"
             )
@@ -162,6 +166,7 @@ class GPUMetrics:
             utilization=state.utils,
             memory_mib=state.mem_mib,
             memory_delta_mib=state.delta_mib,
+            memory_reserved_mib=state.reserved_mem_mib,
         )
 
     def cleanup(self) -> None:

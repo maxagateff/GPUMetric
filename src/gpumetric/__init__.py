@@ -10,7 +10,7 @@ from .exceptions import (
 from .metrics import GPUStats, GPUMetrics
 
 
-__version__ = "0.0.1"
+__version__ = "0.1.2"
 
 __all__ = [
     "GPUMetrics",

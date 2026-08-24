@@ -12,16 +12,19 @@ def test_gpu_stats_creation():
     assert stats.utilization == 0
     assert stats.memory_mib == 397
     assert stats.memory_delta_mib == 0
+    assert stats.memory_reserved_mib == 0
 
 def test_gpu_stats_types():
     stats = GPUStats(
             temperature=42,
             utilization=25,
             memory_mib=1024,
-            memory_delta_mib=128
+            memory_delta_mib=128,
+            memory_reserved_mib=396,
             )
 
     assert isinstance(stats.temperature, int)
     assert isinstance(stats.utilization, int)
     assert isinstance(stats.memory_mib, int)
     assert isinstance(stats.memory_delta_mib, int)
+    assert stats.memory_reserved_mib == 396

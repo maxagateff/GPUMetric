@@ -122,6 +122,13 @@ int gpumetric_nvml_load(gpumetric_nvml_t *nvml)
         "nvmlDeviceGetMemoryInfo"
     );
 
+    /* Optional on older drivers and development headers. */
+    LOAD_SYMBOL(
+        nvml->handle,
+        nvml->DeviceGetMemoryInfo_v2,
+        "nvmlDeviceGetMemoryInfo_v2"
+    );
+
     LOAD_SYMBOL(
         nvml->handle,
         nvml->DeviceGetUtilizationRates,
@@ -161,7 +168,7 @@ int gpumetric_nvml_load(gpumetric_nvml_t *nvml)
         !nvml->Shutdown ||
         !nvml->DeviceGetCount_v2 ||
         !nvml->DeviceGetHandleByIndex_v2 ||
-        !nvml->DeviceGetMemoryInfo ||
+        (!nvml->DeviceGetMemoryInfo && !nvml->DeviceGetMemoryInfo_v2) ||
         !nvml->DeviceGetUtilizationRates ||
         !nvml->DeviceGetTemperature ||
         !nvml->ErrorString) {

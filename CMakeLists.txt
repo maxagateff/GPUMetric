@@ -137,9 +137,9 @@ include(GNUInstallDirs)
 
 install(
         TARGETS gpumetric
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        LIBRARY DESTINATION gpumetric/lib
+        RUNTIME DESTINATION gpumetric/lib
+        ARCHIVE DESTINATION gpumetric/lib
 )
 
 install(
