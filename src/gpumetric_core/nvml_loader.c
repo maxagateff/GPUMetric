@@ -50,9 +50,12 @@ const char *gpumetric_nvml_error(void)
     } while (0)
 
 
-int gpumetric_nvml_load(gpumetric_nvml_t *nvml)
+int gpumetric_nvml_load_from_path(
+    gpumetric_nvml_t *nvml,
+    const char *library_path
+)
 {
-    if (!nvml) {
+    if (!nvml || !library_path || library_path[0] == '\0') {
         set_error("Invalid NVML loader context");
         return -1;
     }
@@ -67,7 +70,7 @@ int gpumetric_nvml_load(gpumetric_nvml_t *nvml)
      * GPUMetric does not ship libnvidia-ml.so.
      */
     nvml->handle = dlopen(
-        "libnvidia-ml.so.1",
+        library_path,
         RTLD_NOW | RTLD_LOCAL
     );
 
@@ -77,7 +80,8 @@ int gpumetric_nvml_load(gpumetric_nvml_t *nvml)
         snprintf(
             nvml_error,
             sizeof(nvml_error),
-            "Failed to load libnvidia-ml.so.1: %s",
+            "Failed to load %s: %s",
+            library_path,
             err ? err : "unknown error"
         );
 
@@ -201,6 +205,15 @@ int gpumetric_nvml_load(gpumetric_nvml_t *nvml)
      */
 
     return 0;
+}
+
+
+int gpumetric_nvml_load(gpumetric_nvml_t *nvml)
+{
+    return gpumetric_nvml_load_from_path(
+        nvml,
+        "libnvidia-ml.so.1"
+    );
 }
 
 

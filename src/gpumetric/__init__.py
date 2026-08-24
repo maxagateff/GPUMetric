@@ -1,6 +1,7 @@
 from .exceptions import (
     GPUMetricArgumentError,
     GPUMetricDeviceError,
+    GPUMetricDriverMismatchError,
     GPUMetricError,
     GPUMetricInitializationError,
     GPUMetricNoDeviceError,
@@ -18,6 +19,7 @@ __all__ = [
     "GPUMetricError",
     "GPUMetricArgumentError",
     "GPUMetricDeviceError",
+    "GPUMetricDriverMismatchError",
     "GPUMetricInitializationError",
     "GPUMetricNoDeviceError",
     "GPUMetricNotInitializedError",
