@@ -1,203 +1,57 @@
-# This workflow builds and publishes the GPUMetric Python package to PyPI.
-
-name: Upload Python Package
+name: Build and publish Python package
 
 on:
   push:
     branches:
-      - master
+      - develop
   release:
     types: [published]
 
 permissions:
   contents: read
 
-
 jobs:
-  release-build:
-    name: Build release distributions (${{ matrix.python-version }})
+  build-wheels:
+    name: Build manylinux wheels
     runs-on: ubuntu-latest
 
-    strategy:
-      fail-fast: false
-
-      matrix:
-        python-version:
-          - "3.10"
-          - "3.11"
-          - "3.12"
-          - "3.13"
-          - "3.14"
-
     steps:
-      - name: Checkout repository
+      - name: Check out repository
         uses: actions/checkout@v4
-
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.14"
 
+      - name: Build wheels with the manylinux 2.28 toolchain
+        uses: pypa/cibuildwheel@v4.2.0
+        env:
+          CIBW_BUILD: >-
+            cp310-manylinux_x86_64
+            cp311-manylinux_x86_64
+            cp312-manylinux_x86_64
+            cp313-manylinux_x86_64
+            cp314-manylinux_x86_64
+          CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
+          CIBW_TEST_COMMAND: >-
+            python -c "from gpumetric import GPUMetrics, GPUStats;
+            print(GPUMetrics, GPUStats)"
+        with:
+          output-dir: wheelhouse
 
-      - name: Show Python version
-        run: |
-          python --version
-          python -c "import sys; print(sys.version)"
-
-
-      - name: Install Python build dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install build auditwheel
-
-
-      - name: Configure APT mirror
-        run: |
-          echo "=== Current APT mirror configuration ==="
-
-          sudo cat /etc/apt/apt-mirrors.txt || true
-
-          sudo grep -R \
-            "azure.archive.ubuntu.com" \
-            /etc/apt \
-            --exclude-dir=lists \
-            --exclude-dir=cache \
-            || true
-
-          echo "=== Switching Ubuntu mirror ==="
-
-          if [ -f /etc/apt/apt-mirrors.txt ]; then
-            sudo sed -i \
-              's|http://azure.archive.ubuntu.com/ubuntu|http://archive.ubuntu.com/ubuntu|g' \
-              /etc/apt/apt-mirrors.txt
-
-            sudo sed -i \
-              's|https://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
-              /etc/apt/apt-mirrors.txt
-          fi
-
-          if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
-            sudo sed -i \
-              's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
-              /etc/apt/sources.list.d/ubuntu.sources
-
-            sudo sed -i \
-              's|https://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
-              /etc/apt/sources.list.d/ubuntu.sources
-          fi
-
-          echo "=== APT configuration after replacement ==="
-
-          sudo cat /etc/apt/apt-mirrors.txt || true
-
-          sudo grep -R \
-            "azure.archive.ubuntu.com" \
-            /etc/apt \
-            --exclude-dir=lists \
-            --exclude-dir=cache \
-            || true
-
-
-      - name: Install system dependencies
-        timeout-minutes: 20
-        run: |
-          sudo apt-get update
-
-          sudo apt-get install -y \
-            build-essential \
-            cmake \
-            libnvidia-ml-dev
-
-
-      - name: Verify NVML development files
-        run: |
-          echo "=== NVML header ==="
-
-          dpkg -L libnvidia-ml-dev | grep '/nvml.h$'
-
-          echo "=== NVML library ==="
-
-          dpkg -L libnvidia-ml-dev | grep 'libnvidia-ml.so' || true
-
-          echo "=== NVML files ==="
-
-          find /usr -name 'nvml.h' -o -name 'libnvidia-ml.so*' 2>/dev/null || true
-
-
-      - name: Show build tools
-        run: |
-          echo "=== Python ==="
-          python --version
-
-          echo "=== CMake ==="
-          cmake --version
-
-          echo "=== GCC ==="
-          gcc --version
-
-          echo "=== G++ ==="
-          g++ --version
-
-
-      - name: Build Linux wheel
-        run: |
-          rm -rf dist
-          mkdir -p dist
-
-          python -m build \
-            --wheel \
-            --outdir dist/
-
-
-      - name: Inspect wheel
-        run: |
-          echo "=== Built wheels ==="
-          ls -lah dist/
-
-          echo "=== Wheel filenames ==="
-          find dist -maxdepth 1 -type f -name '*.whl' -print
-
-
-      - name: Repair Linux wheel
-        run: |
-          rm -rf repaired
-          mkdir -p repaired
-
-          auditwheel repair \
-            --plat manylinux_2_28_x86_64 \
-            --wheel-dir repaired \
-            dist/*.whl
-
-          rm -f dist/*.whl
-
-          mv repaired/*.whl dist/
-
-
-      - name: Verify repaired wheel
-        run: |
-          echo "=== Final wheels ==="
-          ls -lah dist/
-
-          echo "=== Wheel contents ==="
-
-          python -m zipfile \
-            -l dist/*.whl
-
-
-      - name: Upload distributions
+      - name: Upload wheel artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: release-dists-py${{ matrix.python-version }}
-          path: dist/
+          name: release-wheels
+          path: wheelhouse/*.whl
           if-no-files-found: error
 
-
-  pypi-publish:
-    name: Publish to PyPI
+  publish-to-pypi:
+    name: Publish wheels to PyPI
+    if: github.event_name == 'release'
+    needs: build-wheels
     runs-on: ubuntu-latest
-
-    needs: release-build
 
     permissions:
       id-token: write
@@ -207,30 +61,13 @@ jobs:
       url: https://pypi.org/p/gpumetric
 
     steps:
-      - name: Retrieve all release distributions
+      - name: Download wheel artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: release-dists-py*
-          path: dist/
-          merge-multiple: true
+          name: release-wheels
+          path: dist
 
-
-      - name: Verify distributions before publishing
-        run: |
-          echo "=== Packages to publish ==="
-
-          ls -lah dist/
-
-          echo "=== Wheel files ==="
-
-          find dist \
-            -maxdepth 1 \
-            -type f \
-            -name '*.whl' \
-            -print
-
-
-      - name: Publish to PyPI
+      - name: Publish wheels
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/

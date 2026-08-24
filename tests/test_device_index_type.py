@@ -1,9 +1,9 @@
-import gpumetric
+import pytest
 
-#gpumetrics = gpumetric.GPUMetrics(device_index=9999)
+from gpumetric import GPUMetricArgumentError, GPUMetrics
 
-#gpumetrics = gpumetric.GPUMetrics(device_index=-1)
 
-#gpumetrics = gpumetric.GPUMetrics(device_index=[])
-
-#gpumetrics = gpumetric.GPUMetrics(device_index="str")
+@pytest.mark.parametrize("device_index", [-1, [], "0", None, True])
+def test_invalid_device_index_is_rejected(device_index):
+    with pytest.raises(GPUMetricArgumentError):
+        GPUMetrics(device_index=device_index)

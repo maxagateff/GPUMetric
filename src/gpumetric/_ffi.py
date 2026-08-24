@@ -13,6 +13,7 @@ class GPUStates(ctypes.Structure):
         ("utils", ctypes.c_uint32),
         ("mem_mib", ctypes.c_uint64),
         ("delta_mib", ctypes.c_int64),
+        ("reserved_mem_mib", ctypes.c_uint64),
     ]
 def _default_library_path() -> Path:
     """
@@ -60,13 +61,13 @@ class GPUMetricFFI:
         """
         Initialize the native GPUMetric library for a specific GPU.
         """
-        if not isinstance(device_index, int):
+        if isinstance(device_index, bool) or not isinstance(device_index, int):
             raise TypeError("device_index must be an integer")
 
         if device_index < 0:
             raise ValueError("device_index must be non-negative")
 
-        return self._lib.gpu_metric_init(ctypes.c_uint(device_index))
+        return self._lib.gpu_metric_init(device_index)
 
     def sample(self, stats: GPUStates) -> int:
         """
@@ -83,4 +84,3 @@ class GPUMetricFFI:
         release resources held by the native library
         """
         self._lib.gpu_metric_cleanup()
-

@@ -5,7 +5,7 @@
 #ifndef GPUMETRIC_NVML_LOADER_H
 #define GPUMETRIC_NVML_LOADER_H
 
-#include <nvml.h>
+#include "nvml_compat.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -20,8 +20,9 @@ typedef struct{
     nvmlReturn_t (*DeviceGetCount_v2)(unsigned int *deviceCount);
     nvmlReturn_t (*DeviceGetHandleByIndex_v2)(unsigned int index, nvmlDevice_t *device);
     nvmlReturn_t (*DeviceGetMemoryInfo)(nvmlDevice_t device, nvmlMemory_t *memory);
+    nvmlReturn_t (*DeviceGetMemoryInfo_v2)(nvmlDevice_t device, void *memory);
     nvmlReturn_t (*DeviceGetUtilizationRates)(nvmlDevice_t device, nvmlUtilization_t *utilization);
-    nvmlReturn_t (*DeviceGetTemperature)(nvmlDevice_t device, nvmlTemperatureSensor_t sensorType, unsigned int *temp);
+    nvmlReturn_t (*DeviceGetTemperature)(nvmlDevice_t device, nvmlTemperatureSensors_t sensorType, unsigned int *temp);
     nvmlReturn_t (*SystemGetDriverVersion)(char *version, unsigned int length);
     nvmlReturn_t (*SystemGetNVMLVersion)(char *version, unsigned int length);
     const char *(*ErrorString)(nvmlReturn_t result);

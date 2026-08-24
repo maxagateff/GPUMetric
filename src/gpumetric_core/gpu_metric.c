@@ -7,9 +7,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <nvml.h>
-
-
 /*
  * Historical GPU memory state used to calculate
  * the difference between consecutive samples.
@@ -18,6 +15,25 @@ typedef struct {
     uint64_t previous_mem_mib;
     int has_previous_sample;
 } MemoryCache;
+
+/*
+ * NVML memory information v2 ABI.
+ *
+ * Some Linux distributions ship an older nvml.h even when the installed
+ * driver exports nvmlDeviceGetMemoryInfo_v2. Keeping the small versioned
+ * structure here lets GPUMetric use the newer runtime without requiring a
+ * matching development-header release.
+ */
+typedef struct {
+    unsigned int version;
+    unsigned long long total;
+    unsigned long long reserved;
+    unsigned long long free;
+    unsigned long long used;
+} GPUMetricMemoryV2;
+
+#define GPUMETRIC_MEMORY_V2_VERSION \
+    ((unsigned int)sizeof(GPUMetricMemoryV2) | (2U << 24U))
 
 
 /*
@@ -189,10 +205,12 @@ int gpu_metric_sample(GPUStats *out)
     unsigned int temp = 0;
 
     nvmlUtilization_t util;
-    nvmlMemory_t mem;
+    nvmlMemory_t legacy_mem;
+    GPUMetricMemoryV2 memory_v2;
 
     memset(&util, 0, sizeof(util));
-    memset(&mem, 0, sizeof(mem));
+    memset(&legacy_mem, 0, sizeof(legacy_mem));
+    memset(&memory_v2, 0, sizeof(memory_v2));
 
     nvmlReturn_t ret;
 
@@ -236,15 +254,39 @@ int gpu_metric_sample(GPUStats *out)
     /*
      * GPU memory information.
      */
-    ret = nvml.DeviceGetMemoryInfo(
-        device,
-        &mem
-    );
+    uint64_t used_bytes = 0;
+    uint64_t reserved_bytes = 0;
+
+    if (nvml.DeviceGetMemoryInfo_v2) {
+        memory_v2.version = GPUMETRIC_MEMORY_V2_VERSION;
+        ret = nvml.DeviceGetMemoryInfo_v2(device, &memory_v2);
+
+        if (ret == NVML_SUCCESS) {
+            used_bytes = (uint64_t)memory_v2.used;
+            reserved_bytes = (uint64_t)memory_v2.reserved;
+        }
+    } else {
+        ret = NVML_ERROR_NOT_SUPPORTED;
+    }
+
+    /* Fall back for older NVML runtimes that only provide the v1 API. */
+    if (ret == NVML_ERROR_NOT_SUPPORTED ||
+        ret == NVML_ERROR_FUNCTION_NOT_FOUND) {
+        if (!nvml.DeviceGetMemoryInfo) {
+            return GPU_METRIC_ERR_NVML;
+        }
+
+        ret = nvml.DeviceGetMemoryInfo(device, &legacy_mem);
+
+        if (ret == NVML_SUCCESS) {
+            used_bytes = (uint64_t)legacy_mem.used;
+        }
+    }
 
     if (ret != NVML_SUCCESS) {
         fprintf(
             stderr,
-            "[GPUMETRIC] nvmlDeviceGetMemoryInfo failed: %s\n",
+            "[GPUMETRIC] NVML memory query failed: %s\n",
             nvml.ErrorString(ret)
         );
 
@@ -257,7 +299,9 @@ int gpu_metric_sample(GPUStats *out)
      * Convert bytes -> MiB.
      */
     const uint64_t current_mib =
-        (uint64_t) mem.used / (1024ULL * 1024ULL);
+        used_bytes / (1024ULL * 1024ULL);
+    const uint64_t reserved_mib =
+        reserved_bytes / (1024ULL * 1024ULL);
 
     /*
      * Calculate signed memory delta.
@@ -287,6 +331,7 @@ int gpu_metric_sample(GPUStats *out)
     out->util = util.gpu;
     out->mem_mib = current_mib;
     out->delta_mib = delta_mib;
+    out->reserved_mem_mib = reserved_mib;
 
     return GPU_METRIC_SUCCESS;
 }
