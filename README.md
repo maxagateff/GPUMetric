@@ -1,6 +1,6 @@
 # GPUMetric
 
-Lightweight NVIDIA GPU telemetry library for Linux and machine learning workloads.
+Fast, lightweight NVIDIA GPU telemetry for Linux applications and machine learning workloads.
 
 GPUMetric is a small native GPU telemetry library built around **NVIDIA NVML**. The native core is implemented in **C** and exposed to Python through a thin **`ctypes` FFI** layer.
 
@@ -67,6 +67,7 @@ The `ctypes` FFI and C ABI form the boundary between the two.
 * GPU utilization
 * GPU memory usage
 * GPU memory usage delta between consecutive samples
+* Driver- and firmware-reserved GPU memory
 * Explicit GPU device selection
 * Native C telemetry core
 * C ABI between native and Python layers
@@ -150,6 +151,7 @@ with GPUMetrics(device_index=0) as gpu:
     print(f"Utilization: {stats.utilization}%")
     print(f"Memory: {stats.memory_mib} MiB")
     print(f"Memory delta: {stats.memory_delta_mib} MiB")
+    print(f"Reserved memory: {stats.memory_reserved_mib} MiB")
 ```
 
 Example output:
@@ -157,8 +159,9 @@ Example output:
 ```text
 Temperature: 42 °C
 Utilization: 0%
-Memory: 397 MiB
+Memory: 0 MiB
 Memory delta: 0 MiB
+Reserved memory: 396 MiB
 ```
 
 Actual values depend on the current GPU state and workload.
@@ -183,7 +186,8 @@ with GPUMetrics(device_index=0) as gpu:
             f"temperature={stats.temperature}C "
             f"utilization={stats.utilization}% "
             f"memory={stats.memory_mib}MiB "
-            f"memory_delta={stats.memory_delta_mib}MiB"
+            f"memory_delta={stats.memory_delta_mib}MiB "
+            f"memory_reserved={stats.memory_reserved_mib}MiB"
         )
 
         time.sleep(1)
@@ -214,6 +218,7 @@ with GPUMetrics(device_index=0) as gpu:
             "gpu_utilization_percent": stats.utilization,
             "gpu_memory_mib": stats.memory_mib,
             "gpu_memory_delta_mib": stats.memory_delta_mib,
+            "gpu_memory_reserved_mib": stats.memory_reserved_mib,
         }
 
         emit_metrics(metrics)
@@ -300,15 +305,15 @@ See the complete documentation for the current lifecycle and native-state model.
 
 ## Supported Environment
 
-The primary validated environment is:
+The wheel build targets:
 
 * Linux x86-64
-* Ubuntu
+* manylinux 2.28 or newer
 * NVIDIA GPU
 * NVIDIA driver with NVML support
-* CPython 3.11
+* CPython 3.10 through 3.14
 
-The package metadata currently declares Python `>=3.10`, but the primary development and validation target is CPython 3.11.
+The primary development environment is Ubuntu with CPython 3.11. The wheel build pipeline validates imports across every supported CPython version.
 
 Other Linux distributions, Python versions, architectures, or GPU vendors require separate validation.
 
@@ -344,6 +349,7 @@ stats.temperature
 stats.utilization
 stats.memory_mib
 stats.memory_delta_mib
+stats.memory_reserved_mib
 ```
 
 ---
@@ -417,7 +423,10 @@ GPUMetric/
 │   │
 │   └── gpumetric_core/
 │       ├── gpu_metric.c
-│       └── gpu_metric.h
+│       ├── gpu_metric.h
+│       ├── nvml_compat.h
+│       ├── nvml_loader.c
+│       └── nvml_loader.h
 │
 ├── tests/
 │   ├── test_context_manager.py

@@ -532,7 +532,7 @@ It also exports the public exception hierarchy.
 The package version currently defined by the source is:
 
 ```python
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 ```
 
 ---
@@ -582,6 +582,7 @@ It must:
 
 * be an integer
 * be non-negative
+* not be a Boolean value
 
 Invalid values raise:
 
@@ -620,15 +621,17 @@ class GPUStats:
     utilization: int
     memory_mib: int
     memory_delta_mib: int
+    memory_reserved_mib: int
 ```
 
-A sample therefore contains four values:
+A sample therefore contains five values:
 
 ```python
 stats.temperature
 stats.utilization
 stats.memory_mib
 stats.memory_delta_mib
+stats.memory_reserved_mib
 ```
 
 `GPUStats` does not initialize NVML and does not communicate with the GPU.
@@ -1334,7 +1337,7 @@ The native library is built using CMake.
 The current `CMakeLists.txt` requires:
 
 ```text
-CMake >= 3.15
+CMake >= 3.18
 ```
 
 and builds the native implementation using:
@@ -1365,39 +1368,24 @@ cd ..
 
 # 42. Native Build Dependencies
 
-CMake searches for:
+The native build requires a C11 compiler, CMake 3.18 or newer, and `libdl` on
+Linux. It does not require the NVIDIA development headers or link against NVML.
+
+GPUMetric carries the small set of stable NVML ABI declarations it needs in:
 
 ```text
-nvml.h
+src/gpumetric_core/nvml_compat.h
 ```
 
-and:
+At runtime, the loader opens:
 
 ```text
-libnvidia-ml.so
+libnvidia-ml.so.1
 ```
 
-The current CMake configuration searches common locations including:
-
-```text
-/usr/include
-/usr/include/nvidia
-/usr/include/nvidia/gdk
-/usr/local/cuda/include
-```
-
-for the NVML header.
-
-For the NVML library it searches locations including:
-
-```text
-/usr/lib
-/usr/lib64
-/usr/lib/x86_64-linux-gnu
-/usr/local/cuda/lib64
-```
-
-If either the header or library cannot be found, CMake stops with an error.
+The NVIDIA driver supplies this library. If it is unavailable or does not
+provide the required symbols, initialization fails with a typed GPUMetric
+error instead of terminating the host process.
 
 ---
 
@@ -1408,7 +1396,8 @@ The project configures:
 ```text
 C standard: C11
 C extensions: disabled
-Release optimization: -O3
+Compiler warnings: -Wall -Wextra -Wpedantic on GCC and Clang
+NVML loading: runtime through dlopen and dlsym
 ```
 
 The native target is:
@@ -2106,6 +2095,7 @@ stats.temperature
 stats.utilization
 stats.memory_mib
 stats.memory_delta_mib
+stats.memory_reserved_mib
 ```
 
 ## Explicit cleanup
