@@ -29,6 +29,10 @@ typedef struct{
 } gpumetric_nvml_t;
 
 int gpumetric_nvml_load(gpumetric_nvml_t *nvml);
+int gpumetric_nvml_load_from_path(
+    gpumetric_nvml_t *nvml,
+    const char *library_path
+);
 void gpumetric_nvml_unload(gpumetric_nvml_t *nvml);
 const char *gpumetric_nvml_error(void);
 

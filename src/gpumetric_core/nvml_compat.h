@@ -14,7 +14,8 @@ typedef struct nvmlDevice_st *nvmlDevice_t;
 typedef enum {
     NVML_SUCCESS = 0,
     NVML_ERROR_NOT_SUPPORTED = 3,
-    NVML_ERROR_FUNCTION_NOT_FOUND = 13
+    NVML_ERROR_FUNCTION_NOT_FOUND = 13,
+    NVML_ERROR_LIB_RM_VERSION_MISMATCH = 18
 } nvmlReturn_t;
 
 typedef enum {

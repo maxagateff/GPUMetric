@@ -3,7 +3,16 @@ def test_import_gpumetric():
     assert gpumetric is not None
 
 def test_public_api():
-    from gpumetric import GPUMetrics, GPUStats
+    from gpumetric import (
+        GPUMetricDriverMismatchError,
+        GPUMetricInitializationError,
+        GPUMetrics,
+        GPUStats,
+    )
 
     assert GPUMetrics is not None
     assert GPUStats is not None
+    assert issubclass(
+        GPUMetricDriverMismatchError,
+        GPUMetricInitializationError,
+    )

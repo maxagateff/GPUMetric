@@ -10,6 +10,12 @@ class GPUMetricInitializationError(GPUMetricError):
     """
 
 
+class GPUMetricDriverMismatchError(GPUMetricInitializationError):
+    """
+    Raised when the NVIDIA kernel driver and NVML library versions differ.
+    """
+
+
 class GPUMetricNoDeviceError(GPUMetricError):
     """
     Raised when no compatible NVIDIA GPU is detected.

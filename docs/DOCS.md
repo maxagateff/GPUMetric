@@ -272,6 +272,7 @@ Use NVIDIA profiling tools, NVML process queries, or framework-specific memory A
 ```text
 GPUMetricError
 ├── GPUMetricInitializationError
+│   └── GPUMetricDriverMismatchError
 ├── GPUMetricNoDeviceError
 ├── GPUMetricDeviceError
 ├── GPUMetricArgumentError
@@ -282,6 +283,7 @@ GPUMetricError
 | Exception | Typical cause |
 | --- | --- |
 | `GPUMetricInitializationError` | NVML library load or initialization failure |
+| `GPUMetricDriverMismatchError` | NVIDIA kernel driver and NVML userspace library versions differ |
 | `GPUMetricNoDeviceError` | NVML found no compatible GPUs |
 | `GPUMetricDeviceError` | Device lookup or telemetry query failed |
 | `GPUMetricArgumentError` | Invalid Python or native argument |
@@ -318,6 +320,7 @@ Return codes:
 | `-3` | `GPU_METRIC_ERR_DEVICE` | Device access or query failure |
 | `-4` | `GPU_METRIC_ERR_ARGUMENT` | Invalid argument |
 | `-5` | `GPU_METRIC_ERR_NOT_INITIALIZED` | Sampling before initialization or after cleanup |
+| `-6` | `GPU_METRIC_ERR_DRIVER_MISMATCH` | NVIDIA kernel driver and NVML library version mismatch |
 
 The `GPUStats` layout is part of the native ABI. Native consumers must rebuild when this structure changes.
 
@@ -353,6 +356,12 @@ libnvidia-ml.so.1
 ```
 
 with `RTLD_NOW | RTLD_LOCAL`, then resolves required functions with `dlsym`.
+
+If the default library reports a driver/library version mismatch, GPUMetric
+unloads it and retries common trusted absolute locations used by Linux
+distributions and the NVIDIA Container Toolkit. This protects applications
+from a stale or incompatible NVML library selected through `LD_LIBRARY_PATH`.
+GPUMetric never bundles an NVIDIA library.
 
 Required symbols include:
 
@@ -541,6 +550,13 @@ ldconfig -p | grep libnvidia-ml.so.1
 ```
 
 Common causes include a missing driver, driver/library mismatch, inaccessible GPU device files, or container runtime configuration.
+
+For `GPUMetricDriverMismatchError`, first restart the host if the NVIDIA
+driver was updated without a reboot. In a container, do not install a separate
+kernel-driver stack in the image; expose the host GPU and matching driver
+libraries through the NVIDIA Container Toolkit. GPUMetric automatically tries
+known system NVML locations when an incompatible library was selected through
+`LD_LIBRARY_PATH`, but it cannot repair a genuine host kernel/driver mismatch.
 
 ### No compatible GPU
 

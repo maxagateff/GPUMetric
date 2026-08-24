@@ -4,6 +4,7 @@ from ._ffi import GPUStates, GPUMetricFFI
 from .exceptions import (
     GPUMetricArgumentError,
     GPUMetricDeviceError,
+    GPUMetricDriverMismatchError,
     GPUMetricError,
     GPUMetricInitializationError,
     GPUMetricNoDeviceError,
@@ -107,6 +108,13 @@ class GPUMetrics:
         if error_code == -5:
             raise GPUMetricNotInitializedError(
                 "GPUMetric native library is not initialized"
+            )
+
+        if error_code == -6:
+            raise GPUMetricDriverMismatchError(
+                "The NVIDIA kernel driver and NVML library versions do not "
+                "match. Restart the host after a driver update, or verify "
+                "that the container uses the host NVIDIA driver libraries."
             )
 
         raise GPUMetricError(

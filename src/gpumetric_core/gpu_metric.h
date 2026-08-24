@@ -22,6 +22,7 @@ enum {
     GPU_METRIC_ERR_DEVICE = -3,     /**< Failed to communicate with the GPU or fetch metrics */
     GPU_METRIC_ERR_ARGUMENT = -4,   /**< Invalid argument passed to the function (e.g., NULL pointer) */
     GPU_METRIC_ERR_NOT_INITIALIZED = -5,
+    GPU_METRIC_ERR_DRIVER_MISMATCH = -6, /**< NVIDIA kernel driver and NVML library versions differ */
 };
 
 /**

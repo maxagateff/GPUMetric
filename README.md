@@ -150,6 +150,7 @@ from gpumetric import (
     GPUMetricError,
     GPUMetricArgumentError,
     GPUMetricDeviceError,
+    GPUMetricDriverMismatchError,
     GPUMetricInitializationError,
     GPUMetricNoDeviceError,
     GPUMetricNotInitializedError,
@@ -175,12 +176,16 @@ GPUMetrics(device_index: int = 0, lib_path: str | None = None)
 | --- | --- |
 | `GPUMetricArgumentError` | Invalid device index or native argument |
 | `GPUMetricInitializationError` | NVML could not be initialized |
+| `GPUMetricDriverMismatchError` | The kernel driver and loaded NVML library do not match |
 | `GPUMetricNoDeviceError` | No compatible NVIDIA GPU was found |
 | `GPUMetricDeviceError` | The selected GPU could not be accessed or sampled |
 | `GPUMetricNotInitializedError` | Sampling was attempted after cleanup |
 | `GPUMetricSamplingError` | An unclassified native sampling error occurred |
 
 All public exceptions inherit from `GPUMetricError`.
+`GPUMetricDriverMismatchError` also inherits from
+`GPUMetricInitializationError`, so existing initialization handlers continue
+to work.
 
 ## Current Process Model
 
