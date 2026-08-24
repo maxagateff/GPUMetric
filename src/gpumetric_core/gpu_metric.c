@@ -7,9 +7,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <nvml.h>
-
-
 /*
  * Historical GPU memory state used to calculate
  * the difference between consecutive samples.

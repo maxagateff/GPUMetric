@@ -44,41 +44,6 @@ target_include_directories(
 )
 
 # ---------------------------------------------------------
-# NVIDIA NVML headers
-#
-# NVML is loaded dynamically at runtime through dlopen().
-# We DO NOT link against libnvidia-ml.so.
-# ---------------------------------------------------------
-
-find_path(
-        NVML_INCLUDE_DIR
-        NAMES nvml.h
-        PATHS
-        /usr/include
-        /usr/local/include
-        /usr/local/cuda/include
-        /usr/local/cuda-*/include
-)
-
-if(NOT NVML_INCLUDE_DIR)
-    message(
-            FATAL_ERROR
-            "NVIDIA NVML header (nvml.h) not found."
-    )
-endif()
-
-message(
-        STATUS
-        "NVML include directory: ${NVML_INCLUDE_DIR}"
-)
-
-target_include_directories(
-        gpumetric
-        PRIVATE
-        ${NVML_INCLUDE_DIR}
-)
-
-# ---------------------------------------------------------
 # libdl
 #
 # Required for:
@@ -159,6 +124,6 @@ message(STATUS "Version:        ${PROJECT_VERSION}")
 message(STATUS "C standard:     C${CMAKE_C_STANDARD}")
 message(STATUS "NVML loading:   runtime (dlopen)")
 message(STATUS "NVML linking:   disabled")
-message(STATUS "NVML include:   ${NVML_INCLUDE_DIR}")
+message(STATUS "NVML headers:   internal runtime ABI declarations")
 message(STATUS "================================")
 message(STATUS "")

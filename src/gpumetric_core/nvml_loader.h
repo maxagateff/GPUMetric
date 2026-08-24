@@ -5,7 +5,7 @@
 #ifndef GPUMETRIC_NVML_LOADER_H
 #define GPUMETRIC_NVML_LOADER_H
 
-#include <nvml.h>
+#include "nvml_compat.h"
 
 #ifdef __cplusplus
 extern "C" {
