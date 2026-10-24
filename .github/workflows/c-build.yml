@@ -43,7 +43,7 @@ jobs:
         env:
           CC: ${{ matrix.cc }}
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_FLAGS="-Wall -Wextra -Wpedantic -Werror"
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 
       - name: Build
         run: |

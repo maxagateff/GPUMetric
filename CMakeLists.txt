@@ -57,12 +57,18 @@ if(UNIX AND NOT APPLE)
 endif()
 
 # ---------------------------------------------------------
-# Compiler warnings
+# Compiler warnings & Strict Mode (-Werror)
 # ---------------------------------------------------------
 
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(gpumetric PRIVATE -Wall -Wextra -Wpedantic)
+
+    if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+        target_compile_options(gpumetric PRIVATE -Wno-newline-eof)
+    endif()
 endif()
+
+set_target_properties(gpumetric PROPERTIES COMPILE_WARNING_AS_ERROR ON)
 
 # ---------------------------------------------------------
 # Position Independent Code
