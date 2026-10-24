@@ -17,31 +17,31 @@ set(CMAKE_C_EXTENSIONS OFF)
 # ---------------------------------------------------------
 # Sources
 # ---------------------------------------------------------
-
 set(GPUMETRIC_SOURCES
         src/gpumetric_core/gpu_metric.c
         src/gpumetric_core/nvml_loader.c
+        src/gpumetric_core/nvml_runtime.c
 )
 
 # ---------------------------------------------------------
 # Shared library
 # ---------------------------------------------------------
-
-add_library(
-        gpumetric
-        SHARED
-        ${GPUMETRIC_SOURCES}
-)
+add_library(gpumetric SHARED ${GPUMETRIC_SOURCES})
 
 # ---------------------------------------------------------
 # Include directories
 # ---------------------------------------------------------
+target_include_directories(gpumetric PUBLIC ${PROJECT_SOURCE_DIR}/src/gpumetric_core)
 
-target_include_directories(
-        gpumetric
-        PUBLIC
-        ${PROJECT_SOURCE_DIR}/src/gpumetric_core
-)
+# ---------------------------------------------------------
+# Threads
+#
+# Required for:
+#   pthread_mutex_lock()
+#   pthread_mutex_unlock()
+# ---------------------------------------------------------
+find_package(Threads REQUIRED)
+target_link_libraries(gpumetric PRIVATE Threads::Threads)
 
 # ---------------------------------------------------------
 # libdl
@@ -53,11 +53,7 @@ target_include_directories(
 # ---------------------------------------------------------
 
 if(UNIX AND NOT APPLE)
-    target_link_libraries(
-            gpumetric
-            PRIVATE
-            dl
-    )
+    target_link_libraries(gpumetric PRIVATE ${CMAKE_DL_LIBS})
 endif()
 
 # ---------------------------------------------------------
@@ -65,54 +61,26 @@ endif()
 # ---------------------------------------------------------
 
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(
-            gpumetric
-            PRIVATE
-            -Wall
-            -Wextra
-            -Wpedantic
-    )
+    target_compile_options(gpumetric PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
 # ---------------------------------------------------------
 # Position Independent Code
 # ---------------------------------------------------------
-
-set_target_properties(
-        gpumetric
-        PROPERTIES
-        POSITION_INDEPENDENT_CODE ON
-)
+set_target_properties(gpumetric PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # ---------------------------------------------------------
 # Output name
 # ---------------------------------------------------------
-
-set_target_properties(
-        gpumetric
-        PROPERTIES
-        OUTPUT_NAME gpumetric
-)
+set_target_properties(gpumetric PROPERTIES OUTPUT_NAME gpumetric)
 
 # ---------------------------------------------------------
 # Install
 # ---------------------------------------------------------
 
 include(GNUInstallDirs)
-
-install(
-        TARGETS gpumetric
-        LIBRARY DESTINATION gpumetric/lib
-        RUNTIME DESTINATION gpumetric/lib
-        ARCHIVE DESTINATION gpumetric/lib
-)
-
-install(
-        FILES
-        src/gpumetric_core/gpu_metric.h
-        DESTINATION
-        ${CMAKE_INSTALL_INCLUDEDIR}/gpumetric
-)
+install(TARGETS gpumetric LIBRARY DESTINATION gpumetric/lib RUNTIME DESTINATION gpumetric/lib ARCHIVE DESTINATION gpumetric/lib)
+install(FILES src/gpumetric_core/gpu_metric.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/gpumetric)
 
 # ---------------------------------------------------------
 # Build information
@@ -125,5 +93,6 @@ message(STATUS "C standard:     C${CMAKE_C_STANDARD}")
 message(STATUS "NVML loading:   runtime (dlopen)")
 message(STATUS "NVML linking:   disabled")
 message(STATUS "NVML headers:   internal runtime ABI declarations")
+message(STATUS "Threads:        enabled")
 message(STATUS "================================")
 message(STATUS "")

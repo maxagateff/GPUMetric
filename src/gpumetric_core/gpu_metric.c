@@ -6,7 +6,6 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
 
 /*
  * Historical GPU memory state used to calculate
@@ -50,69 +49,6 @@ static int initialized = 0;
 
 
 /*
- * Absolute paths commonly used by Linux distributions and the NVIDIA
- * Container Toolkit. These are only tried after the default loader returns
- * NVML_ERROR_LIB_RM_VERSION_MISMATCH, which can happen when LD_LIBRARY_PATH
- * points at an NVML library that does not match the running kernel driver.
- */
-static const char *const trusted_nvml_paths[] = {
-    "/usr/local/nvidia/lib64/libnvidia-ml.so.1",
-    "/usr/local/nvidia/lib/libnvidia-ml.so.1",
-    "/usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1",
-    "/lib/x86_64-linux-gnu/libnvidia-ml.so.1",
-    "/usr/lib64/libnvidia-ml.so.1",
-    "/usr/lib/libnvidia-ml.so.1",
-    "/run/nvidia/driver/usr/lib64/libnvidia-ml.so.1"
-};
-
-
-/*
- * Retry NVML initialization from trusted absolute locations.
- *
- * Returns NVML_SUCCESS when a matching runtime is found. A mismatch leaves
- * the loader unloaded; another initialization error keeps its library loaded
- * long enough for the caller to report the matching NVML error string.
- */
-static nvmlReturn_t retry_nvml_after_version_mismatch(void)
-{
-    const size_t path_count =
-        sizeof(trusted_nvml_paths) / sizeof(trusted_nvml_paths[0]);
-
-    for (size_t index = 0; index < path_count; ++index) {
-        const char *path = trusted_nvml_paths[index];
-
-        if (access(path, R_OK) != 0) {
-            continue;
-        }
-
-        if (gpumetric_nvml_load_from_path(&nvml, path) != 0) {
-            continue;
-        }
-
-        nvmlReturn_t ret = nvml.Init_v2();
-
-        if (ret == NVML_SUCCESS) {
-            fprintf(
-                stderr,
-                "[GPUMETRIC] Using compatible NVML library: %s\n",
-                path
-            );
-
-            return NVML_SUCCESS;
-        }
-
-        if (ret != NVML_ERROR_LIB_RM_VERSION_MISMATCH) {
-            return ret;
-        }
-
-        gpumetric_nvml_unload(&nvml);
-    }
-
-    return NVML_ERROR_LIB_RM_VERSION_MISMATCH;
-}
-
-
-/*
  * Initialize NVML and bind to the requested NVIDIA GPU.
  */
 int gpu_metric_init(unsigned int device_index)
@@ -143,26 +79,7 @@ int gpu_metric_init(unsigned int device_index)
      */
     nvmlReturn_t ret = nvml.Init_v2();
 
-    if (ret == NVML_ERROR_LIB_RM_VERSION_MISMATCH) {
-        gpumetric_nvml_unload(&nvml);
-        ret = retry_nvml_after_version_mismatch();
-    }
-
     if (ret != NVML_SUCCESS) {
-        if (ret == NVML_ERROR_LIB_RM_VERSION_MISMATCH) {
-            fprintf(
-                stderr,
-                "[GPUMETRIC] NVIDIA driver/library version mismatch. "
-                "No compatible system NVML library was found. "
-                "Restart the host after a driver update, or verify that "
-                "the container uses the host NVIDIA driver libraries.\n"
-            );
-
-            gpumetric_nvml_unload(&nvml);
-
-            return GPU_METRIC_ERR_DRIVER_MISMATCH;
-        }
-
         fprintf(
             stderr,
             "[GPUMETRIC] nvmlInit_v2 failed: %s\n",

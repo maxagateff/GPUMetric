@@ -1,0 +1,70 @@
+name: C Build
+
+on:
+  push:
+    branches:
+      - master
+      - develop
+
+  pull_request:
+    branches:
+      - master
+      - develop
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.compiler }}
+    runs-on: ubuntu-24.04
+
+    strategy:
+      fail-fast: false
+
+      matrix:
+        include:
+          - compiler: GCC
+            cc: gcc
+
+          - compiler: Clang
+            cc: clang
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake clang
+
+      - name: Configure CMake
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_FLAGS="-Wall -Wextra -Wpedantic -Werror"
+
+      - name: Build
+        run: |
+          cmake --build build --parallel 2
+
+      - name: Verify shared library
+        run: |
+          test -f build/libgpumetric.so
+          file build/libgpumetric.so
+
+      - name: Check exported symbols
+        run: |
+          nm -D --defined-only build/libgpumetric.so
+
+      - name: Check dynamic dependencies
+        run: |
+          ldd build/libgpumetric.so
+
+      - name: Upload library
+        uses: actions/upload-artifact@v4
+        with:
+          name: gpumetric-${{ matrix.compiler }}
+          path: build/libgpumetric.so
+          if-no-files-found: error

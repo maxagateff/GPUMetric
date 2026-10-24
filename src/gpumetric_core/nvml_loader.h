@@ -19,6 +19,7 @@ typedef struct{
 
     nvmlReturn_t (*DeviceGetCount_v2)(unsigned int *deviceCount);
     nvmlReturn_t (*DeviceGetHandleByIndex_v2)(unsigned int index, nvmlDevice_t *device);
+    nvmlReturn_t (*DeviceGetHandleByUUID)(const char *uuid, nvmlDevice_t *device);
     nvmlReturn_t (*DeviceGetMemoryInfo)(nvmlDevice_t device, nvmlMemory_t *memory);
     nvmlReturn_t (*DeviceGetMemoryInfo_v2)(nvmlDevice_t device, void *memory);
     nvmlReturn_t (*DeviceGetUtilizationRates)(nvmlDevice_t device, nvmlUtilization_t *utilization);

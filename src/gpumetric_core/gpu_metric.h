@@ -1,5 +1,6 @@
 #pragma once
 #include <stdint.h>
+typedef struct GPUContext GPUContext;
 
 /**
  * @brief Structure containing the sampled GPU hardware metrics.
@@ -42,3 +43,30 @@ int gpu_metric_sample(GPUStats* out);
  * @brief Shuts down NVML and releases allocated system resources.
  */
 void gpu_metric_cleanup(void);
+/**
+ * @brief Creates a GPU context using its NVML device index.
+ *
+ * @param device_index NVIDIA GPU index.
+ * @param out Receives the allocated GPU context.
+ * @return GPU_METRIC_SUCCESS on success, negative error code otherwise.
+ */
+int gpu_metric_create_by_index(unsigned int device_index, GPUContext **out);
+
+/**
+ * @brief Creates a GPU context using its UUID.
+ *
+ * @param uuid NVIDIA GPU UUID.
+ * @param out Receives the allocated GPU context.
+ * @return GPU_METRIC_SUCCESS on success, negative error code otherwise.
+ */
+int gpu_metric_create_by_uuid(const char *uuid, GPUContext **out);
+
+/**
+ * @brief Samples metrics from a specific GPU context.
+ */
+int gpu_metric_context_sample(GPUContext *ctx, GPUStats *out);
+
+/**
+ * @brief Releases a GPU context.
+ */
+void gpu_metric_context_destroy(GPUContext *ctx);
