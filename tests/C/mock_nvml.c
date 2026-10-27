@@ -6,14 +6,15 @@
 
 static int initialized = 0;
 
-static struct {
+typedef struct {
     unsigned int index;
     const char *uuid;
     unsigned int temperature;
     unsigned int utilization;
     unsigned long long memory_used;
 } MockDevice;
-// ((typeof(devices[0]) *)device)->index
+
+//
 static MockDevice devices[MOCK_GPU_COUNT] = {
     {0, "GPU-MOCK-0000", 65, 80, 1024ULL * 1024 * 1024},
     {1, "GPU-MOCK-0001", 70, 90, 2048ULL * 1024 * 1024}
@@ -54,7 +55,7 @@ nvmlReturn_t nvmlDeviceGetHandleByUUID(const char *uuid, nvmlDevice_t *device) {
 
 nvmlReturn_t nvmlDeviceGetMemoryInfo(nvmlDevice_t device, nvmlMemory_t *memory) {
     if (!initialized || !device || !memory) return NVML_ERROR_NOT_SUPPORTED;
-    unsigned int index = ((MockDevice *)device)->index
+    unsigned int index = ((MockDevice *)device)->index;
     memory->total = 8ULL * 1024 * 1024 * 1024;
     memory->used = devices[index].memory_used;
     memory->free = memory->total - memory->used;
@@ -63,7 +64,7 @@ nvmlReturn_t nvmlDeviceGetMemoryInfo(nvmlDevice_t device, nvmlMemory_t *memory) 
 
 nvmlReturn_t nvmlDeviceGetUtilizationRates(nvmlDevice_t device, nvmlUtilization_t *utilization) {
     if (!initialized || !device || !utilization) return NVML_ERROR_NOT_SUPPORTED;
-    unsigned int index = ((MockDevice *)device)->index
+    unsigned int index = ((MockDevice *)device)->index;
     utilization->gpu = devices[index].utilization;
     utilization->memory = 50;
     return NVML_SUCCESS;
