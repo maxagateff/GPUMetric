@@ -1,15 +1,16 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "gpu_metric.h"
-#include "nvml_loader.h"
+#include "nvml_runtime.h"
 
+#include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-/*
- * Historical GPU memory state used to calculate
- * the difference between consecutive samples.
+/* NVML_ERROR_NOT_SUPPORTED
+ * Historical GPU memory state.
  */
 typedef struct {
     uint64_t previous_mem_mib;
@@ -18,11 +19,6 @@ typedef struct {
 
 /*
  * NVML memory information v2 ABI.
- *
- * Some Linux distributions ship an older nvml.h even when the installed
- * driver exports nvmlDeviceGetMemoryInfo_v2. Keeping the small versioned
- * structure here lets GPUMetric use the newer runtime without requiring a
- * matching development-header release.
  */
 typedef struct {
     unsigned int version;
@@ -32,224 +28,176 @@ typedef struct {
     unsigned long long used;
 } GPUMetricMemoryV2;
 
-#define GPUMETRIC_MEMORY_V2_VERSION \
-    ((unsigned int)sizeof(GPUMetricMemoryV2) | (2U << 24U))
-
+#define GPUMETRIC_MEMORY_V2_VERSION ((unsigned int)sizeof(GPUMetricMemoryV2) | (2U << 24U))
 
 /*
- * Native GPUMetric state.
+ * Independent GPU context.
  *
- * The current implementation intentionally keeps a single
- * process-wide GPU context.
+ * Each context owns:
+ * - one NVML runtime reference;
+ * - one GPU device handle;
+ * - one memory cache;
+ * - one sampling mutex.
  */
-static gpumetric_nvml_t nvml;
-static nvmlDevice_t device;
-static MemoryCache cache;
-static int initialized = 0;
+struct GPUContext {
+    const gpumetric_nvml_t *nvml;
+    nvmlDevice_t device;
+    MemoryCache cache;
+    pthread_mutex_t mutex;
+};
+
+/*
+ * Legacy API state.
+ *
+ * Retained for backward compatibility.
+ */
+static pthread_mutex_t legacy_mutex = PTHREAD_MUTEX_INITIALIZER;
+static GPUContext *legacy_context = NULL;
 
 
 /*
- * Initialize NVML and bind to the requested NVIDIA GPU.
+ * Convert NVML errors to GPUMetric error codes.
  */
-int gpu_metric_init(unsigned int device_index)
-{
-    /*
-     * Initialization is idempotent for the current context.
-     */
-    if (initialized) {
-        return GPU_METRIC_SUCCESS;
-    }
+static int gpu_metric_nvml_error(nvmlReturn_t ret) {
+    if (ret == NVML_ERROR_LIB_RM_VERSION_MISMATCH) {return GPU_METRIC_ERR_DRIVER_MISMATCH;}
+    return GPU_METRIC_ERR_DEVICE;
+}
 
-    /*
-     * Dynamically load libnvidia-ml.so.1 and resolve
-     * the required NVML symbols.
-     */
-    if (gpumetric_nvml_load(&nvml) != 0) {
-        fprintf(
-            stderr,
-            "[GPUMETRIC] Failed to load NVML: %s\n",
-            gpumetric_nvml_error()
-        );
 
+/*
+ * Allocate and initialize a GPU context.
+ *
+ * The caller must already own an NVML runtime reference.
+ */
+static int gpu_metric_context_allocate(const gpumetric_nvml_t *nvml, nvmlDevice_t device, GPUContext **out) {
+    if (!nvml || !device || !out) {return GPU_METRIC_ERR_ARGUMENT;}
+
+    *out = NULL;
+
+    GPUContext *ctx = calloc(1, sizeof(*ctx));
+    if (!ctx) {return GPU_METRIC_ERR_NVML;}
+
+    ctx->nvml = nvml;
+    ctx->device = device;
+
+    if (pthread_mutex_init(&ctx->mutex, NULL) != 0) {
+        free(ctx);
         return GPU_METRIC_ERR_NVML;
     }
-
-    /*
-     * Initialize NVML.
-     */
-    nvmlReturn_t ret = nvml.Init_v2();
-
-    if (ret != NVML_SUCCESS) {
-        fprintf(
-            stderr,
-            "[GPUMETRIC] nvmlInit_v2 failed: %s\n",
-            nvml.ErrorString(ret)
-        );
-
-        /*
-         * NVML initialization failed, but the shared library
-         * was successfully opened by dlopen().
-         */
-        gpumetric_nvml_unload(&nvml);
-
-        return GPU_METRIC_ERR_NVML;
-    }
-
-    /*
-     * Query the number of NVIDIA devices.
-     */
-    unsigned int count = 0;
-
-    ret = nvml.DeviceGetCount_v2(&count);
-
-    if (ret != NVML_SUCCESS) {
-        fprintf(
-            stderr,
-            "[GPUMETRIC] nvmlDeviceGetCount_v2 failed: %s\n",
-            nvml.ErrorString(ret)
-        );
-
-        nvml.Shutdown();
-        gpumetric_nvml_unload(&nvml);
-
-        return GPU_METRIC_ERR_NVML;
-    }
-
-    /*
-     * NVML is available, but there are no NVIDIA GPUs.
-     */
-    if (count == 0) {
-        fprintf(
-            stderr,
-            "[GPUMETRIC] No compatible NVIDIA GPUs detected\n"
-        );
-
-        nvml.Shutdown();
-        gpumetric_nvml_unload(&nvml);
-
-        return GPU_METRIC_ERR_NO_DEVICE;
-    }
-
-    /*
-     * Validate the requested GPU index.
-     */
-    if (device_index >= count) {
-        fprintf(
-            stderr,
-            "[GPUMETRIC] Invalid GPU index: %u "
-            "(available GPUs: %u)\n",
-            device_index,
-            count
-        );
-
-        nvml.Shutdown();
-        gpumetric_nvml_unload(&nvml);
-
-        return GPU_METRIC_ERR_ARGUMENT;
-    }
-
-    /*
-     * Resolve the NVML device handle.
-     */
-    ret = nvml.DeviceGetHandleByIndex_v2(
-        device_index,
-        &device
-    );
-
-    if (ret != NVML_SUCCESS) {
-        fprintf(
-            stderr,
-            "[GPUMETRIC] nvmlDeviceGetHandleByIndex_v2 failed: %s\n",
-            nvml.ErrorString(ret)
-        );
-
-        nvml.Shutdown();
-        gpumetric_nvml_unload(&nvml);
-
-        memset(&device, 0, sizeof(device));
-
-        return GPU_METRIC_ERR_DEVICE;
-    }
-
-    /*
-     * Reset sampling state.
-     *
-     * The first sample after initialization has no previous
-     * sample, therefore its memory delta is zero.
-     */
-    memset(&cache, 0, sizeof(cache));
-
-    initialized = 1;
+    *out = ctx;
 
     return GPU_METRIC_SUCCESS;
 }
 
 
 /*
- * Sample current GPU metrics.
+ * Create a GPU context using its NVML index.
  */
-int gpu_metric_sample(GPUStats *out)
-{
-    if (!initialized) {
-        return GPU_METRIC_ERR_NOT_INITIALIZED;
+int gpu_metric_create_by_index(unsigned int device_index, GPUContext **out) {
+    if (!out) return GPU_METRIC_ERR_ARGUMENT;
+
+    *out = NULL;
+
+    const gpumetric_nvml_t *nvml = NULL;
+
+    int status = gpumetric_runtime_acquire(&nvml);
+    if (status != GPU_METRIC_SUCCESS) {return status;}
+
+    unsigned int count = 0;
+
+    nvmlReturn_t ret = nvml->DeviceGetCount_v2(&count);
+
+    if (ret != NVML_SUCCESS) {
+        status = gpu_metric_nvml_error(ret);
+        goto error;
     }
 
-    if (out == NULL) {
-        return GPU_METRIC_ERR_ARGUMENT;
+    if (count == 0) {
+        status = GPU_METRIC_ERR_NO_DEVICE;
+        goto error;
     }
 
-    /*
-     * Do not partially modify the output structure if
-     * one of the NVML calls fails.
-     */
+    if (device_index >= count) {
+        status = GPU_METRIC_ERR_ARGUMENT;
+        goto error;
+    }
+
+    nvmlDevice_t device = NULL;
+
+    ret = nvml->DeviceGetHandleByIndex_v2(device_index, &device);
+    if (ret != NVML_SUCCESS) {
+        status = gpu_metric_nvml_error(ret);
+        goto error;
+    }
+
+    status = gpu_metric_context_allocate(nvml, device, out);
+    if (status != GPU_METRIC_SUCCESS) goto error;
+
+    return GPU_METRIC_SUCCESS;
+
+error: gpumetric_runtime_release();
+    return status;
+}
+
+
+/*
+ * Create a GPU context using its UUID.
+ */
+int gpu_metric_create_by_uuid(const char *uuid, GPUContext **out) {
+    if (!out) return GPU_METRIC_ERR_ARGUMENT;
+
+    *out = NULL;
+    if (!uuid || !uuid[0]) {return GPU_METRIC_ERR_ARGUMENT;}
+
+    const gpumetric_nvml_t *nvml = NULL;
+
+    int status = gpumetric_runtime_acquire(&nvml);
+    if (status != GPU_METRIC_SUCCESS) {return status;}
+
+    nvmlDevice_t device = NULL;
+    nvmlReturn_t ret = nvml->DeviceGetHandleByUUID(uuid, &device);
+
+    if (ret != NVML_SUCCESS) {
+        status = gpu_metric_nvml_error(ret);
+        goto error;
+    }
+    status = gpu_metric_context_allocate(nvml, device, out);
+    if (status != GPU_METRIC_SUCCESS) goto error;
+    return GPU_METRIC_SUCCESS;
+
+error: gpumetric_runtime_release();
+    return status;
+}
+
+
+/*
+ * Collect GPU metrics.
+ *
+ * This function must be called while holding ctx->mutex.
+ */
+static int gpu_metric_collect(GPUContext *ctx, GPUStats *out) {
+    const gpumetric_nvml_t *nvml = ctx->nvml;
+    nvmlDevice_t device = ctx->device;
+
     unsigned int temp = 0;
 
-    nvmlUtilization_t util;
-    nvmlMemory_t legacy_mem;
-    GPUMetricMemoryV2 memory_v2;
-
-    memset(&util, 0, sizeof(util));
-    memset(&legacy_mem, 0, sizeof(legacy_mem));
-    memset(&memory_v2, 0, sizeof(memory_v2));
+    nvmlUtilization_t util = {0};
+    nvmlMemory_t legacy_mem = {0};
+    GPUMetricMemoryV2 memory_v2 = {0};
 
     nvmlReturn_t ret;
 
     /*
      * GPU temperature.
      */
-    ret = nvml.DeviceGetTemperature(
-        device,
-        NVML_TEMPERATURE_GPU,
-        &temp
-    );
-
-    if (ret != NVML_SUCCESS) {
-        fprintf(
-            stderr,
-            "[GPUMETRIC] nvmlDeviceGetTemperature failed: %s\n",
-            nvml.ErrorString(ret)
-        );
-
-        return GPU_METRIC_ERR_DEVICE;
-    }
+    ret = nvml->DeviceGetTemperature(device,NVML_TEMPERATURE_GPU, &temp);
+    if (ret != NVML_SUCCESS) {return gpu_metric_nvml_error(ret);}
 
     /*
      * GPU utilization.
      */
-    ret = nvml.DeviceGetUtilizationRates(
-        device,
-        &util
-    );
-
-    if (ret != NVML_SUCCESS) {
-        fprintf(
-            stderr,
-            "[GPUMETRIC] nvmlDeviceGetUtilizationRates failed: %s\n",
-            nvml.ErrorString(ret)
-        );
-
-        return GPU_METRIC_ERR_DEVICE;
-    }
+    ret = nvml->DeviceGetUtilizationRates(device, &util);
+    if (ret != NVML_SUCCESS) {return gpu_metric_nvml_error(ret);}
 
     /*
      * GPU memory information.
@@ -257,135 +205,141 @@ int gpu_metric_sample(GPUStats *out)
     uint64_t used_bytes = 0;
     uint64_t reserved_bytes = 0;
 
-    if (nvml.DeviceGetMemoryInfo_v2) {
+    if (nvml->DeviceGetMemoryInfo_v2) {
         memory_v2.version = GPUMETRIC_MEMORY_V2_VERSION;
-        ret = nvml.DeviceGetMemoryInfo_v2(device, &memory_v2);
+        ret = nvml->DeviceGetMemoryInfo_v2(device, &memory_v2);
 
         if (ret == NVML_SUCCESS) {
             used_bytes = (uint64_t)memory_v2.used;
             reserved_bytes = (uint64_t)memory_v2.reserved;
-        }
-    } else {
-        ret = NVML_ERROR_NOT_SUPPORTED;
-    }
-
-    /* Fall back for older NVML runtimes that only provide the v1 API. */
-    if (ret == NVML_ERROR_NOT_SUPPORTED ||
-        ret == NVML_ERROR_FUNCTION_NOT_FOUND) {
-        if (!nvml.DeviceGetMemoryInfo) {
-            return GPU_METRIC_ERR_NVML;
-        }
-
-        ret = nvml.DeviceGetMemoryInfo(device, &legacy_mem);
-
-        if (ret == NVML_SUCCESS) {
-            used_bytes = (uint64_t)legacy_mem.used;
-        }
-    }
-
-    if (ret != NVML_SUCCESS) {
-        fprintf(
-            stderr,
-            "[GPUMETRIC] NVML memory query failed: %s\n",
-            nvml.ErrorString(ret)
-        );
-
-        return GPU_METRIC_ERR_DEVICE;
-    }
+        }} else {ret = NVML_ERROR_NOT_SUPPORTED;}
 
     /*
-     * NVML reports memory in bytes.
-     *
-     * Convert bytes -> MiB.
+     * Fallback to legacy NVML memory API.
      */
-    const uint64_t current_mib =
-        used_bytes / (1024ULL * 1024ULL);
-    const uint64_t reserved_mib =
-        reserved_bytes / (1024ULL * 1024ULL);
+    if (ret == NVML_ERROR_NOT_SUPPORTED) {
+        if (!nvml->DeviceGetMemoryInfo) {return GPU_METRIC_ERR_NVML;}
+        ret = nvml->DeviceGetMemoryInfo(device, &legacy_mem);
+        if (ret == NVML_SUCCESS) {used_bytes = (uint64_t)legacy_mem.used;}
+    }
+
+    if (ret != NVML_SUCCESS) {return gpu_metric_nvml_error(ret);}
 
     /*
-     * Calculate signed memory delta.
-     *
-     * A negative value is valid when GPU memory usage decreases.
+     * Convert bytes to MiB.
+     */
+    const uint64_t current_mib = used_bytes / (1024ULL * 1024ULL);
+    const uint64_t reserved_mib = reserved_bytes / (1024ULL * 1024ULL);
+
+    /*
+     * Calculate memory delta.
      */
     int64_t delta_mib = 0;
-
-    if (cache.has_previous_sample) {
-        delta_mib =
-            (int64_t) current_mib -
-            (int64_t) cache.previous_mem_mib;
-    }
+    if (ctx->cache.has_previous_sample) {delta_mib = (int64_t)current_mib - (int64_t)ctx->cache.previous_mem_mib;}
 
     /*
-     * Update historical state only after all NVML calls
-     * have succeeded.
+     * Prepare a complete sample before committing it.
      */
-    cache.previous_mem_mib = current_mib;
-    cache.has_previous_sample = 1;
+    GPUStats sample = {
+        .temp = temp,
+        .util = util.gpu,
+        .mem_mib = current_mib,
+        .delta_mib = delta_mib,
+        .reserved_mem_mib = reserved_mib
+    };
 
     /*
-     * Populate the public C structure only after the complete
-     * sample has been collected successfully.
+     * Update cache only after successful collection.
      */
-    out->temp = temp;
-    out->util = util.gpu;
-    out->mem_mib = current_mib;
-    out->delta_mib = delta_mib;
-    out->reserved_mem_mib = reserved_mib;
+    ctx->cache.previous_mem_mib = current_mib;
+    ctx->cache.has_previous_sample = 1;
+
+    *out = sample;
 
     return GPU_METRIC_SUCCESS;
 }
 
 
 /*
- * Shut down NVML and release native state.
+ * Sample metrics from a specific GPU context.
+ */
+int gpu_metric_context_sample(GPUContext *ctx, GPUStats *out) {
+    if (!ctx || !out) {return GPU_METRIC_ERR_ARGUMENT;}
+    if (pthread_mutex_lock(&ctx->mutex) != 0) {return GPU_METRIC_ERR_NVML;}
+
+    int status = gpu_metric_collect(ctx, out);
+    pthread_mutex_unlock(&ctx->mutex);
+    return status;
+}
+
+
+/*
+ * Destroy a GPU context.
+ *
+ * The caller must ensure that no other thread
+ * is using this context.
+ */
+void gpu_metric_context_destroy(GPUContext *ctx) {
+    if (!ctx) return;
+    pthread_mutex_destroy(&ctx->mutex);
+    gpumetric_runtime_release();
+    free(ctx);
+}
+
+
+/*
+ * Legacy API.
+ *
+ * Preserves the original process-wide interface.
+ */
+int gpu_metric_init(unsigned int device_index) {
+    if (pthread_mutex_lock(&legacy_mutex) != 0) {return GPU_METRIC_ERR_NVML;}
+
+    /*
+     * Preserve historical idempotent initialization.
+     */
+    if (legacy_context) {
+        pthread_mutex_unlock(&legacy_mutex);
+        return GPU_METRIC_SUCCESS;
+    }
+
+    GPUContext *ctx = NULL;
+
+    int status = gpu_metric_create_by_index(device_index, &ctx);
+    if (status == GPU_METRIC_SUCCESS) {legacy_context = ctx;}
+
+    pthread_mutex_unlock(&legacy_mutex);
+
+    return status;
+}
+
+
+/*
+ * Legacy sampling API.
+ */
+int gpu_metric_sample(GPUStats *out) {
+    if (pthread_mutex_lock(&legacy_mutex) != 0) {return GPU_METRIC_ERR_NVML;}
+
+    if (!legacy_context) {
+        pthread_mutex_unlock(&legacy_mutex);
+        return GPU_METRIC_ERR_NOT_INITIALIZED;
+    }
+
+    int status = gpu_metric_context_sample(legacy_context, out);
+    pthread_mutex_unlock(&legacy_mutex);
+    return status;
+}
+
+
+/*
+ * Legacy cleanup API.
  */
 void gpu_metric_cleanup(void)
 {
-    /*
-     * cleanup() is intentionally idempotent.
-     */
-    if (initialized) {
-        /*
-         * IMPORTANT:
-         *
-         * Do NOT call nvmlShutdown() directly here.
-         *
-         * GPUMetric uses runtime NVML loading through dlopen/dlsym,
-         * therefore the shutdown function must also be invoked
-         * through the resolved function pointer.
-         */
-        if (nvml.Shutdown) {
-            nvmlReturn_t ret = nvml.Shutdown();
-
-            if (ret != NVML_SUCCESS && nvml.ErrorString) {
-                fprintf(
-                    stderr,
-                    "[GPUMETRIC] nvmlShutdown failed: %s\n",
-                    nvml.ErrorString(ret)
-                );
-            }
-        }
-
-        initialized = 0;
+    if (pthread_mutex_lock(&legacy_mutex) != 0) return;
+    if (legacy_context) {
+        gpu_metric_context_destroy(legacy_context);
+        legacy_context = NULL;
     }
-
-    /*
-     * Close libnvidia-ml.so.1 and clear all resolved
-     * function pointers.
-     */
-    gpumetric_nvml_unload(&nvml);
-
-    /*
-     * Reset sampling state.
-     *
-     * This guarantees that a later init() starts a completely
-     * new sampling sequence.
-     */
-    memset(&cache, 0, sizeof(cache));
-
-    /*
-     * Clear the opaque device handle.
-     */
-    memset(&device, 0, sizeof(device));
+    pthread_mutex_unlock(&legacy_mutex);
 }

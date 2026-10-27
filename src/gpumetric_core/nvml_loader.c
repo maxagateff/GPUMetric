@@ -4,215 +4,81 @@
 #include <stdio.h>
 #include <string.h>
 
-static char nvml_error[512];
+static _Thread_local char nvml_error[512];
 
-
-/*
- * Store a human-readable loader error.
- */
-static void set_error(const char *message)
-{
-    snprintf(
-        nvml_error,
-        sizeof(nvml_error),
-        "%s",
-        message
-    );
-}
-
+static void set_error(const char *message) {snprintf(nvml_error, sizeof(nvml_error), "%s", message);}
+const char *gpumetric_nvml_error(void) {return nvml_error;}
 
 /*
- * Return the last NVML loader error.
+ * POSIX dlsym() returns a symbol address.
+ * memcpy avoids direct object-to-function pointer casts.
  */
-const char *gpumetric_nvml_error(void)
-{
-    return nvml_error;
-}
+#define LOAD_SYMBOL(handle, target, name) do {              \
+    void *symbol_address = dlsym((handle), (name));          \
+    memcpy(&(target), &symbol_address, sizeof(target));      \
+} while (0)
 
-
-/*
- * Helper for resolving symbols with dlsym().
- *
- * dlsym() returns void *, while POSIX permits converting the returned
- * address to a function pointer. ISO C itself does not formally define
- * object-pointer -> function-pointer conversions, hence the usual
- * -Wpedantic warning with direct casts.
- *
- * memcpy avoids the direct cast while preserving the resolved address.
- */
-#define LOAD_SYMBOL(handle, target, symbol_name)        \
-    do {                                                \
-        void *symbol_ptr = dlsym((handle),              \
-                                 (symbol_name));         \
-        memcpy(&(target),                               \
-               &symbol_ptr,                             \
-               sizeof(target));                         \
-    } while (0)
-
-
-int gpumetric_nvml_load(gpumetric_nvml_t *nvml)
-{
+int gpumetric_nvml_load_from_path(gpumetric_nvml_t *nvml, const char *library_path) {
     if (!nvml) {
         set_error("Invalid NVML loader context");
         return -1;
     }
 
-    memset(nvml, 0, sizeof(*nvml));
-    memset(nvml_error, 0, sizeof(nvml_error));
-
     /*
-     * NVIDIA driver provides this library.
-     *
-     * IMPORTANT:
-     * GPUMetric does not ship libnvidia-ml.so.
+     * The caller must unload an existing context before reusing it.
      */
-    nvml->handle = dlopen(
-        "libnvidia-ml.so.1",
-        RTLD_NOW | RTLD_LOCAL
-    );
-
-    if (!nvml->handle) {
-        const char *err = dlerror();
-
-        snprintf(
-            nvml_error,
-            sizeof(nvml_error),
-            "Failed to load libnvidia-ml.so.1: %s",
-            err ? err : "unknown error"
-        );
-
+    if (!library_path || !library_path[0]) {
+        set_error("Invalid NVML library path");
         return -1;
     }
 
-    /*
-     * Clear possible stale dlerror() state before resolving symbols.
-     */
-    dlerror();
+    memset(nvml, 0, sizeof(*nvml));
+    nvml_error[0] = '\0';
 
-    /*
-     * Resolve required NVML API dynamically.
-     */
-    LOAD_SYMBOL(
-        nvml->handle,
-        nvml->Init_v2,
-        "nvmlInit_v2"
-    );
+    nvml->handle = dlopen(library_path, RTLD_NOW | RTLD_LOCAL);
 
-    LOAD_SYMBOL(
-        nvml->handle,
-        nvml->Shutdown,
-        "nvmlShutdown"
-    );
+    if (!nvml->handle) {
+        const char *err = dlerror();
+        snprintf(nvml_error, sizeof(nvml_error), "Failed to load NVML: %s", err ? err : "unknown error");
+        return -1;
+    }
 
-    LOAD_SYMBOL(
-        nvml->handle,
-        nvml->DeviceGetCount_v2,
-        "nvmlDeviceGetCount_v2"
-    );
+    LOAD_SYMBOL(nvml->handle, nvml->Init_v2, "nvmlInit_v2");
+    LOAD_SYMBOL(nvml->handle, nvml->Shutdown, "nvmlShutdown");
+    LOAD_SYMBOL(nvml->handle, nvml->DeviceGetCount_v2, "nvmlDeviceGetCount_v2");
+    LOAD_SYMBOL(nvml->handle, nvml->DeviceGetHandleByIndex_v2, "nvmlDeviceGetHandleByIndex_v2");
+    LOAD_SYMBOL(nvml->handle, nvml->DeviceGetHandleByUUID, "nvmlDeviceGetHandleByUUID");
+    LOAD_SYMBOL(nvml->handle, nvml->DeviceGetMemoryInfo, "nvmlDeviceGetMemoryInfo");
+    LOAD_SYMBOL(nvml->handle, nvml->DeviceGetMemoryInfo_v2, "nvmlDeviceGetMemoryInfo_v2");
+    LOAD_SYMBOL(nvml->handle, nvml->DeviceGetUtilizationRates, "nvmlDeviceGetUtilizationRates");
+    LOAD_SYMBOL(nvml->handle, nvml->DeviceGetTemperature, "nvmlDeviceGetTemperature");
+    LOAD_SYMBOL(nvml->handle, nvml->SystemGetDriverVersion, "nvmlSystemGetDriverVersion");
+    LOAD_SYMBOL(nvml->handle, nvml->SystemGetNVMLVersion, "nvmlSystemGetNVMLVersion");
+    LOAD_SYMBOL(nvml->handle, nvml->ErrorString, "nvmlErrorString");
 
-    LOAD_SYMBOL(
-        nvml->handle,
-        nvml->DeviceGetHandleByIndex_v2,
-        "nvmlDeviceGetHandleByIndex_v2"
-    );
-
-    LOAD_SYMBOL(
-        nvml->handle,
-        nvml->DeviceGetMemoryInfo,
-        "nvmlDeviceGetMemoryInfo"
-    );
-
-    /* Optional on older drivers and development headers. */
-    LOAD_SYMBOL(
-        nvml->handle,
-        nvml->DeviceGetMemoryInfo_v2,
-        "nvmlDeviceGetMemoryInfo_v2"
-    );
-
-    LOAD_SYMBOL(
-        nvml->handle,
-        nvml->DeviceGetUtilizationRates,
-        "nvmlDeviceGetUtilizationRates"
-    );
-
-    LOAD_SYMBOL(
-        nvml->handle,
-        nvml->DeviceGetTemperature,
-        "nvmlDeviceGetTemperature"
-    );
-
-    LOAD_SYMBOL(
-        nvml->handle,
-        nvml->SystemGetDriverVersion,
-        "nvmlSystemGetDriverVersion"
-    );
-
-    LOAD_SYMBOL(
-        nvml->handle,
-        nvml->SystemGetNVMLVersion,
-        "nvmlSystemGetNVMLVersion"
-    );
-
-    LOAD_SYMBOL(
-        nvml->handle,
-        nvml->ErrorString,
-        "nvmlErrorString"
-    );
-
-    /*
-     * Required API.
-     *
-     * Every symbol used unconditionally by GPUMetric must be checked here.
-     */
     if (!nvml->Init_v2 ||
         !nvml->Shutdown ||
         !nvml->DeviceGetCount_v2 ||
         !nvml->DeviceGetHandleByIndex_v2 ||
+        !nvml->DeviceGetHandleByUUID ||
         (!nvml->DeviceGetMemoryInfo && !nvml->DeviceGetMemoryInfo_v2) ||
         !nvml->DeviceGetUtilizationRates ||
         !nvml->DeviceGetTemperature ||
         !nvml->ErrorString) {
 
-        const char *err = dlerror();
-
-        if (err) {
-            snprintf(
-                nvml_error,
-                sizeof(nvml_error),
-                "Loaded NVML, but required symbols are missing: %s",
-                err
-            );
-        } else {
-            set_error(
-                "Loaded NVML, but required NVML symbols are missing"
-            );
-        }
-
+        set_error("Loaded NVML, but required symbols are missing");
         dlclose(nvml->handle);
         memset(nvml, 0, sizeof(*nvml));
-
         return -1;
     }
-
-    /*
-     * SystemGetDriverVersion and SystemGetNVMLVersion are left optional.
-     * If GPUMetric depends on them unconditionally, add them to the check
-     * above as required symbols.
-     */
-
     return 0;
 }
 
+int gpumetric_nvml_load(gpumetric_nvml_t *nvml) {return gpumetric_nvml_load_from_path(nvml,"libnvidia-ml.so.1");}
 
 void gpumetric_nvml_unload(gpumetric_nvml_t *nvml)
 {
-    if (!nvml) {
-        return;
-    }
-
-    if (nvml->handle) {
-        dlclose(nvml->handle);
-    }
-
+    if (!nvml) return;
+    if (nvml->handle) dlclose(nvml->handle);
     memset(nvml, 0, sizeof(*nvml));
 }

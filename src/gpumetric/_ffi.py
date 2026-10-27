@@ -31,13 +31,10 @@ class GPUMetricFFI:
     """
 
     def __init__(self, lib_path: str | Path | None = None) -> None:
-        if lib_path is None:
-            lib_path = _default_library_path()
+        if lib_path is None: lib_path = _default_library_path()
 
         resolved_path = Path(lib_path).resolve()
-
-        if not resolved_path.is_file():
-            raise FileNotFoundError(f"GPUMetric native library not found: {resolved_path}")
+        if not resolved_path.is_file(): raise FileNotFoundError(f"GPUMetric native library not found: {resolved_path}")
 
         self._lib = ctypes.CDLL(str(resolved_path))
 
@@ -48,12 +45,9 @@ class GPUMetricFFI:
         configure ctypes function signatures to match the C ABI
         """
         self._lib.gpu_metric_init.argtypes = [ctypes.c_uint]
-
         self._lib.gpu_metric_init.restype = ctypes.c_int
-
         self._lib.gpu_metric_sample.argtypes = [ctypes.POINTER(GPUStates)]
         self._lib.gpu_metric_sample.restype = ctypes.c_int
-
         self._lib.gpu_metric_cleanup.argtypes = []
         self._lib.gpu_metric_cleanup.restype = None
 
@@ -61,11 +55,8 @@ class GPUMetricFFI:
         """
         Initialize the native GPUMetric library for a specific GPU.
         """
-        if isinstance(device_index, bool) or not isinstance(device_index, int):
-            raise TypeError("device_index must be an integer")
-
-        if device_index < 0:
-            raise ValueError("device_index must be non-negative")
+        if isinstance(device_index, bool) or not isinstance(device_index, int): raise TypeError("device_index must be an integer")
+        if device_index < 0: raise ValueError("device_index must be non-negative")
 
         return self._lib.gpu_metric_init(device_index)
 
@@ -74,9 +65,7 @@ class GPUMetricFFI:
         fill a GPUStates structure with the latest GPU metrics
         """
 
-        if not isinstance(stats, GPUStates):
-            raise TypeError("stats must be an instance of GPUStates")
-
+        if not isinstance(stats, GPUStates): raise TypeError("stats must be an instance of GPUStates")
         return self._lib.gpu_metric_sample(ctypes.byref(stats))
 
     def cleanup(self) -> None:

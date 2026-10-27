@@ -48,79 +48,33 @@ class GPUMetrics:
     High-level Python interface for NVIDIA GPU metrics.
     """
 
-    def __init__(
-            self,
-            device_index: int = 0,
-            lib_path: str | None = None,
-    ) -> None:
-        if isinstance(device_index, bool) or not isinstance(device_index, int):
-            raise GPUMetricArgumentError(
-                "device_index must be an integer"
-            )
-
-        if device_index < 0:
-            raise GPUMetricArgumentError(
-                "device_index must be non-negative"
-            )
+    def __init__(self, device_index: int = 0, lib_path: str | None = None) -> None:
+        if isinstance(device_index, bool) or not isinstance(device_index, int): raise GPUMetricArgumentError("device_index must be an integer")
+        if device_index < 0: raise GPUMetricArgumentError("device_index must be non-negative")
 
         self._ffi = GPUMetricFFI(lib_path)
         self._initialized = False
         self._device_index = device_index
 
         ret = self._ffi.init(device_index)
-
-        if ret != 0:
-            self._raise_initialization_error(ret)
+        if ret != 0: self._raise_initialization_error(ret)
 
         self._initialized = True
 
-    def _raise_initialization_error(
-            self,
-            error_code: int,
-    ) -> None:
+    def _raise_initialization_error(self, error_code: int) -> None:
         """
         Convert a native initialization error code into
         the appropriate Python exception.
         """
 
-        if error_code == -1:
-            raise GPUMetricInitializationError(
-                "Failed to initialize NVIDIA NVML"
-            )
+        if error_code == -1: raise GPUMetricInitializationError("Failed to initialize NVIDIA NVML")
+        if error_code == -2: raise GPUMetricNoDeviceError("No compatible NVIDIA GPU detected")
+        if error_code == -3: raise GPUMetricDeviceError(f"Failed to access GPU device {self._device_index}")
+        if error_code == -4: raise GPUMetricArgumentError(f"Invalid GPU device index: {self._device_index}")
+        if error_code == -5: raise GPUMetricNotInitializedError("GPUMetric native library is not initialized")
+        if error_code == -6: raise GPUMetricDriverMismatchError("The NVIDIA kernel driver and NVML library versions do not match. Restart the host after a driver update, or verify that the container uses the host NVIDIA driver libraries.")
 
-        if error_code == -2:
-            raise GPUMetricNoDeviceError(
-                "No compatible NVIDIA GPU detected"
-            )
-
-        if error_code == -3:
-            raise GPUMetricDeviceError(
-                f"Failed to access GPU device "
-                f"{self._device_index}"
-            )
-
-        if error_code == -4:
-            raise GPUMetricArgumentError(
-                f"Invalid GPU device index: "
-                f"{self._device_index}"
-            )
-
-        if error_code == -5:
-            raise GPUMetricNotInitializedError(
-                "GPUMetric native library is not initialized"
-            )
-
-        if error_code == -6:
-            raise GPUMetricDriverMismatchError(
-                "The NVIDIA kernel driver and NVML library versions do not "
-                "match. Restart the host after a driver update, or verify "
-                "that the container uses the host NVIDIA driver libraries."
-            )
-
-        raise GPUMetricError(
-            f"GPUMetric initialization failed "
-            f"with error code: {error_code}"
-        )
+        raise GPUMetricError(f"GPUMetric initialization failed with error code: {error_code}")
 
     def sample(self) -> GPUStats:
         """
@@ -138,36 +92,16 @@ class GPUMetrics:
                 If the native library fails to sample metrics.
         """
 
-        if not self._initialized:
-            raise GPUMetricNotInitializedError(
-                "GPUMetrics is not initialized"
-            )
+        if not self._initialized: raise GPUMetricNotInitializedError("GPUMetrics is not initialized")
 
         state = GPUStates()
-
         ret = self._ffi.sample(state)
 
         if ret != 0:
-            if ret == -3:
-                raise GPUMetricDeviceError(
-                    "Failed to communicate with the GPU "
-                    "or fetch GPU metrics"
-                )
-
-            if ret == -4:
-                raise GPUMetricArgumentError(
-                    "Invalid argument passed to GPU metric sampler"
-                )
-
-            if ret == -5:
-                raise GPUMetricNotInitializedError(
-                    "GPUMetric native library is not initialized"
-                )
-
-            raise GPUMetricSamplingError(
-                f"Failed to sample GPU metrics "
-                f"(error code: {ret})"
-            )
+            if ret == -3: raise GPUMetricDeviceError("Failed to communicate with the GPU or fetch GPU metrics")
+            if ret == -4: raise GPUMetricArgumentError("Invalid argument passed to GPU metric sampler")
+            if ret == -5: raise GPUMetricNotInitializedError("GPUMetric native library is not initialized")
+            raise GPUMetricSamplingError(f"Failed to sample GPU metrics (error code: {ret})")
 
         return GPUStats(
             temperature=state.temp,
@@ -180,7 +114,6 @@ class GPUMetrics:
     def cleanup(self) -> None:
         """
         Explicitly release native GPUMetric resources.
-
         Calling cleanup() multiple times is safe.
         """
 
@@ -188,23 +121,10 @@ class GPUMetrics:
             self._ffi.cleanup()
             self._initialized = False
 
-    def __enter__(self) -> "GPUMetrics":
-        return self
-
-    def __exit__(
-            self,
-            exc_type,
-            exc_value,
-            traceback,
-    ) -> None:
-        self.cleanup()
+    def __enter__(self) -> "GPUMetrics": return self
+    def __exit__(self, exc_type, exc_value, traceback) -> None: self.cleanup()
 
     def __del__(self) -> None:
-        """
-        Best-effort cleanup when the object is garbage-collected.
-        """
-
-        try:
-            self.cleanup()
-        except Exception:
-            pass
+        """Best-effort cleanup when the object is garbage-collected."""
+        try: self.cleanup()
+        except Exception: pass

@@ -89,6 +89,16 @@ install(TARGETS gpumetric LIBRARY DESTINATION gpumetric/lib RUNTIME DESTINATION 
 install(FILES src/gpumetric_core/gpu_metric.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/gpumetric)
 
 # ---------------------------------------------------------
+# Tests
+# ---------------------------------------------------------
+
+include(CTest)
+
+if(BUILD_TESTING)
+    add_subdirectory(tests/C)
+endif()
+
+# ---------------------------------------------------------
 # Build information
 # ---------------------------------------------------------
 

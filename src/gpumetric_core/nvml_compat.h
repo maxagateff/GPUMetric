@@ -18,9 +18,7 @@ typedef enum {
     NVML_ERROR_LIB_RM_VERSION_MISMATCH = 18
 } nvmlReturn_t;
 
-typedef enum {
-    NVML_TEMPERATURE_GPU = 0
-} nvmlTemperatureSensors_t;
+typedef enum {NVML_TEMPERATURE_GPU = 0} nvmlTemperatureSensors_t;
 
 typedef struct {
     unsigned int gpu;
