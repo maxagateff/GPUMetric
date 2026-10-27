@@ -30,5 +30,5 @@ add_dependencies(gpumetric_test_core mock_nvml)
 
 add_executable(test_gpu_context test_gpu_context.c)
 target_include_directories(test_gpu_context PRIVATE ${PROJECT_SOURCE_DIR}/src/gpumetric_core)
-target_link_libraries(test_gpu_context PRIVATE gpumetric_test_core)
+target_link_libraries(test_gpu_context PRIVATE gpumetric_test_core mock_nvml)
 add_test(NAME gpu_context COMMAND test_gpu_context)

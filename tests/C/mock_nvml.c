@@ -1,10 +1,34 @@
 #include "nvml_compat.h"
+#include "mock_nvml_control.h"
 
 #include <string.h>
 
 #define MOCK_GPU_COUNT 2
 
 static int initialized = 0;
+
+static nvmlReturn_t init_failure = NVML_SUCCESS;
+static nvmlReturn_t temperature_failure = NVML_SUCCESS;
+static nvmlReturn_t utilization_failure = NVML_SUCCESS;
+static nvmlReturn_t memory_failure = NVML_SUCCESS;
+
+static unsigned int init_calls = 0;
+static unsigned int shutdown_calls = 0;
+
+void mock_nvml_set_init_failure(nvmlReturn_t value) {init_failure = value;}
+void mock_nvml_set_temperature_failure(nvmlReturn_t value) {temperature_failure = value;}
+void mock_nvml_set_utilization_failure(nvmlReturn_t value) {utilization_failure = value;}
+void mock_nvml_set_memory_failure(nvmlReturn_t value) {memory_failure = value;}
+
+unsigned int mock_nvml_init_calls(void) {return init_calls;}
+unsigned int mock_nvml_shutdown_calls(void) {return shutdown_calls;}
+
+void mock_nvml_reset_failures(void) {
+    init_failure = NVML_SUCCESS;
+    temperature_failure = NVML_SUCCESS;
+    utilization_failure = NVML_SUCCESS;
+    memory_failure = NVML_SUCCESS;
+}
 
 typedef struct {
     unsigned int index;
@@ -21,11 +45,15 @@ static MockDevice devices[MOCK_GPU_COUNT] = {
 };
 
 nvmlReturn_t nvmlInit_v2(void) {
+    init_calls++;
+    if (init_failure != NVML_SUCCESS) return init_failure;
+
     initialized = 1;
     return NVML_SUCCESS;
 }
 
 nvmlReturn_t nvmlShutdown(void) {
+    shutdown_calls++;
     initialized = 0;
     return NVML_SUCCESS;
 }
@@ -55,6 +83,7 @@ nvmlReturn_t nvmlDeviceGetHandleByUUID(const char *uuid, nvmlDevice_t *device) {
 
 nvmlReturn_t nvmlDeviceGetMemoryInfo(nvmlDevice_t device, nvmlMemory_t *memory) {
     if (!initialized || !device || !memory) return NVML_ERROR_NOT_SUPPORTED;
+    if (memory_failure != NVML_SUCCESS) return memory_failure;
     unsigned int index = ((MockDevice *)device)->index;
     memory->total = 8ULL * 1024 * 1024 * 1024;
     memory->used = devices[index].memory_used;
@@ -64,6 +93,7 @@ nvmlReturn_t nvmlDeviceGetMemoryInfo(nvmlDevice_t device, nvmlMemory_t *memory) 
 
 nvmlReturn_t nvmlDeviceGetUtilizationRates(nvmlDevice_t device, nvmlUtilization_t *utilization) {
     if (!initialized || !device || !utilization) return NVML_ERROR_NOT_SUPPORTED;
+    if (utilization_failure != NVML_SUCCESS) return utilization_failure;
     unsigned int index = ((MockDevice *)device)->index;
     utilization->gpu = devices[index].utilization;
     utilization->memory = 50;
@@ -73,9 +103,12 @@ nvmlReturn_t nvmlDeviceGetUtilizationRates(nvmlDevice_t device, nvmlUtilization_
 nvmlReturn_t nvmlDeviceGetTemperature(nvmlDevice_t device, nvmlTemperatureSensors_t sensor, unsigned int *temperature) {
     (void)sensor;
     if (!initialized || !device || !temperature) return NVML_ERROR_NOT_SUPPORTED;
+    if (temperature_failure != NVML_SUCCES) return temperature_failure;
     unsigned int index = ((MockDevice *)device)->index;
     *temperature = devices[index].temperature;
     return NVML_SUCCESS;
 }
 
 const char *nvmlErrorString(nvmlReturn_t result) {return result == NVML_SUCCESS ? "Success" : "Mock NVML error";}
+
+void mock_nvml_set_memory_used(unsigned int index, unsigned long long bytes) {if (index < MOCK_GPU_COUNT) devices[index].memory_used = bytes;}
