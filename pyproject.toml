@@ -1,7 +1,5 @@
 [build-system]
-requires = [
-    "scikit-build-core>=0.11"
-]
+requires = ["scikit-build-core>=0.11"]
 build-backend = "scikit_build_core.build"
 
 
@@ -15,9 +13,7 @@ readme = "README.md"
 
 requires-python = ">=3.10,<3.15"
 
-authors = [
-    { name = "Max Agateff" }
-]
+authors = [{ name = "Max Agateff" }]
 
 license = { text = "GNU General Public License v3.0" }
 
@@ -58,6 +54,8 @@ License = "https://github.com/maxagateff/GPUMetric/blob/master/LICENSE"
 [tool.scikit-build]
 wheel.packages = ["src/gpumetric"]
 
+[tool.scikit-build.cmake.define]
+BUILD_TESTING = "OFF"
 
 [tool.scikit-build.cmake]
 build-type = "Release"
