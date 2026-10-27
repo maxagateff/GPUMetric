@@ -94,8 +94,8 @@ install(FILES src/gpumetric_core/gpu_metric.h DESTINATION ${CMAKE_INSTALL_INCLUD
 
 include(CTest)
 
-if(BUILD_TESTING)
-    add_subdirectory(tests/C)
+if(BUILD_TESTING AND EXISTS "${PROJECT_SOURCE_DIR}/tests/c/CMakeLists.txt")
+    add_subdirectory(tests/c)
 endif()
 
 # ---------------------------------------------------------
