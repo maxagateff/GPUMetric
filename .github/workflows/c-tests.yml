@@ -95,3 +95,33 @@ jobs:
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: |
           ctest --test-dir build-sanitizers --output-on-failure --no-tests=error
+
+  nvml-abi:
+    name: NVML ABI / NVIDIA Headers
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build libnvidia-ml-dev
+
+      - name: Configure CMake
+        run: |
+          cmake -S . -B build-abi -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON -DCMAKE_C_FLAGS="-Wall -Wextra -Wpedantic -Werror"
+
+      - name: Verify ABI test registration
+        run: |
+          ctest --test-dir build-abi -N -R '^nvml_memory_abi$' | tee /tmp/nvml-abi-tests.txt
+          grep -q 'Test #.*nvml_memory_abi' /tmp/nvml-abi-tests.txt
+
+      - name: Build ABI test
+        run: |
+          cmake --build build-abi --target test_nvml_memory_abi --parallel
+
+      - name: Verify NVIDIA NVML ABI
+        run: |
+          ctest --test-dir build-abi -R '^nvml_memory_abi$' --output-on-failure --no-tests=error
