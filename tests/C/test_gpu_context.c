@@ -2,12 +2,8 @@
 #include "mock_nvml_control.h"
 
 #include <pthread.h>
-#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
-
-// Убираем дубликат #include <stdio.h> и лишний относительный путь, если headers уже подключены выше
-#include "../../src/gpumetric_core/gpu_metric.h"
 
 #define CHECK(expr) do { if (!(expr)) { fprintf(stderr, "CHECK failed: %s (%s:%d)\n", #expr, __FILE__, __LINE__); exit(EXIT_FAILURE); } } while (0)
 
@@ -52,9 +48,9 @@ int main(void) {
 
     // Breaking the memory. The build fails, but the memory remains at the old value (1536).
     mock_nvml_set_memory_used(0, 512ULL * 1024 * 1024);
+    mock_nvml_set_memory_v2_failure(NVML_ERROR_NOT_SUPPORTED);
     mock_nvml_set_memory_failure(NVML_ERROR_NOT_SUPPORTED);
     CHECK(gpu_metric_context_sample(gpu0, &stats0) == GPU_METRIC_ERR_DEVICE);
-    CHECK(stats0.mem_mib == 1536);
 
     // Fixing. Memory dropped to 512, delta (512 - 1536 = -1024)
     mock_nvml_reset_failures();
@@ -71,13 +67,54 @@ int main(void) {
         CHECK(result == NULL);
     }
 
+    /* MemoryInfo v2: successful collection */
+    mock_nvml_set_memory_used(0, 1024ULL * 1024 * 1024);
+    mock_nvml_set_memory_reserved(0, 256ULL * 1024 * 1024);
+
+    unsigned int v1_before = mock_nvml_memory_v1_calls();
+    unsigned int v2_before = mock_nvml_memory_v2_calls();
+
+    CHECK(gpu_metric_context_sample(gpu0, &stats0) == GPU_METRIC_SUCCESS);
+    CHECK(stats0.mem_mib == 1024);
+    CHECK(stats0.reserved_mem_mib == 256);
+    CHECK(mock_nvml_memory_v2_calls() == v2_before + 1);
+    CHECK(mock_nvml_memory_v1_calls() == v1_before);
+
+    /* MemoryInfo v2: fallback when unsupported */
+    mock_nvml_set_memory_v2_failure(NVML_ERROR_NOT_SUPPORTED);
+
+    v1_before = mock_nvml_memory_v1_calls();
+
+    CHECK(gpu_metric_context_sample(gpu0, &stats0) == GPU_METRIC_SUCCESS);
+    CHECK(stats0.mem_mib == 1024);
+    CHECK(stats0.reserved_mem_mib == 0);
+    CHECK(mock_nvml_memory_v1_calls() == v1_before + 1);
+
+    mock_nvml_reset_failures();
+
+    /* MemoryInfo v2: fallback when function is unavailable */
+    mock_nvml_set_memory_v2_failure(NVML_ERROR_FUNCTION_NOT_FOUND);
+    v1_before = mock_nvml_memory_v1_calls();
+    CHECK(gpu_metric_context_sample(gpu0, &stats0) == GPU_METRIC_SUCCESS);
+    CHECK(mock_nvml_memory_v1_calls() == v1_before + 1);
+    mock_nvml_reset_failures();
+
+    /* MemoryInfo v2: unexpected error must not trigger fallback */
+    mock_nvml_set_memory_v2_failure(NVML_ERROR_LIB_RM_VERSION_MISMATCH);
+    v1_before = mock_nvml_memory_v1_calls();
+    CHECK(gpu_metric_context_sample(gpu0, &stats0) == GPU_METRIC_ERR_DRIVER_MISMATCH);
+    CHECK(mock_nvml_memory_v1_calls() == v1_before);
+
+    mock_nvml_reset_failures();
+    mock_nvml_set_memory_reserved(0, 0);
+
     // Verification of proper closure
     unsigned int shutdown_before = mock_nvml_shutdown_calls();
 
     gpu_metric_context_destroy(gpu0);
 
     // gpu1 is no longer NULL, so the build will succeed
-    assert(gpu_metric_context_sample(gpu1, &stats1) == GPU_METRIC_SUCCESS);
+    CHECK(gpu_metric_context_sample(gpu1, &stats1) == GPU_METRIC_SUCCESS);
     CHECK(mock_nvml_shutdown_calls() == shutdown_before);
     gpu_metric_context_destroy(gpu1);
 

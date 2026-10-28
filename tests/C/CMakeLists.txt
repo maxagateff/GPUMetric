@@ -43,3 +43,24 @@ target_compile_definitions(test_nvml_loader PRIVATE GPUMETRIC_MOCK_NVML_PATH="$<
 target_link_libraries(test_nvml_loader PRIVATE ${CMAKE_DL_LIBS})
 add_dependencies(test_nvml_loader mock_nvml mock_nvml_incomplete)
 add_test(NAME nvml_loader COMMAND test_nvml_loader)
+
+# ---------------------------------------------------------
+# GPU concurrent lifecycle tests
+# ---------------------------------------------------------
+add_executable(test_gpu_concurrency test_gpu_concurrency.c)
+target_include_directories(test_gpu_concurrency PRIVATE ${PROJECT_SOURCE_DIR}/src/gpumetric_core)
+target_link_libraries(test_gpu_concurrency PRIVATE gpumetric_test_core mock_nvml Threads::Threads)
+add_test(NAME gpu_concurrency COMMAND test_gpu_concurrency)
+
+# ---------------------------------------------------------
+# NVIDIA NVML MemoryInfo v2 ABI verification
+# ---------------------------------------------------------
+
+find_path(GPUMETRIC_NVML_INCLUDE_DIR NAMES nvml.h HINTS /usr/local/cuda/include /usr/local/cuda/targets/x86_64-linux/include /usr/include /usr/include/nvidia/gdk)
+if(GPUMETRIC_NVML_INCLUDE_DIR)
+    add_executable(test_nvml_memory_abi test_nvml_memory_abi.c)
+    target_include_directories(test_nvml_memory_abi PRIVATE ${PROJECT_SOURCE_DIR}/src/gpumetric_core ${GPUMETRIC_NVML_INCLUDE_DIR})
+    add_test(NAME nvml_memory_abi COMMAND test_nvml_memory_abi)
+else()
+    message(STATUS "NVIDIA NVML headers not found: skipping MemoryInfo v2 ABI test")
+endif()

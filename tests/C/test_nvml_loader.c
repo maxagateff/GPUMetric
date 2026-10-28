@@ -42,10 +42,17 @@ int main(void) {
     CHECK(nvml.Init_v2 != NULL);
     CHECK(nvml.DeviceGetMemoryInfo != NULL);
 
-    /* MemoryInfo v2 is optional */
-    CHECK(nvml.DeviceGetMemoryInfo_v2 == NULL);
-
     CHECK(gpumetric_nvml_error()[0] == '\0');
+
+    /* Repeated loading must fail without losing the existing handle. */
+    void *original_handle = nvml.handle;
+    CHECK(gpumetric_nvml_load_from_path(&nvml, GPUMETRIC_MOCK_NVML_PATH) != 0);
+    CHECK(nvml.handle == original_handle);
+    CHECK(nvml.Init_v2 != NULL);
+    CHECK(strstr(gpumetric_nvml_error(), "already loaded") != NULL);
+
+    /* MemoryInfo v2 is optional */
+    CHECK(nvml.DeviceGetMemoryInfo_v2 != NULL);
 
     /* Cleanup */
     gpumetric_nvml_unload(&nvml);

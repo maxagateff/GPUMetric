@@ -15,4 +15,9 @@ void mock_nvml_reset_failures(void);
 unsigned int mock_nvml_init_calls(void);
 unsigned int mock_nvml_shutdown_calls(void);
 
+void mock_nvml_set_memory_v2_failure(nvmlReturn_t value);
+void mock_nvml_set_memory_reserved(unsigned int index, unsigned long long bytes);
+unsigned int mock_nvml_memory_v1_calls(void);
+unsigned int mock_nvml_memory_v2_calls(void);
+
 #endif

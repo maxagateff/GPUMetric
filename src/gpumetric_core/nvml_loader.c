@@ -18,23 +18,38 @@ const char *gpumetric_nvml_error(void) {return nvml_error;}
     memcpy(&(target), &symbol_address, sizeof(target));      \
 } while (0)
 
+/**
+ * Load NVML symbols from the specified shared library.
+ *
+ * The caller must provide a zero-initialized gpumetric_nvml_t.
+ * An already loaded instance must be unloaded before reuse.
+ *
+ * On success, the caller owns the dynamic library handle and
+ * must eventually call gpumetric_nvml_unload().
+ *
+ * On failure, the instance contains no owned library handle.
+ *
+ * This function is intended for internal use.
+ */
+
 int gpumetric_nvml_load_from_path(gpumetric_nvml_t *nvml, const char *library_path) {
     if (!nvml) {
         set_error("Invalid NVML loader context");
         return -1;
     }
 
-    /*
-     * The caller must unload an existing context before reusing it.
-     */
     if (!library_path || !library_path[0]) {
         set_error("Invalid NVML library path");
         return -1;
     }
 
+    if (nvml->handle) {
+        set_error("NVML library is already loaded");
+        return -1;
+    }
+
     memset(nvml, 0, sizeof(*nvml));
     nvml_error[0] = '\0';
-
     nvml->handle = dlopen(library_path, RTLD_NOW | RTLD_LOCAL);
 
     if (!nvml->handle) {

@@ -16,6 +16,12 @@ int gpumetric_runtime_acquire(const gpumetric_nvml_t **out)
     *out = NULL;
 
     if (pthread_mutex_lock(&runtime_mutex) != 0) {return GPU_METRIC_ERR_NVML;}
+
+    if (runtime_refcount == UINT_MAX) {
+        pthread_mutex_unlock(&runtime_mutex);
+        return GPU_METRIC_ERR_NVML;
+    }
+
     if (runtime_refcount == 0) {
         if (gpumetric_nvml_load(&runtime_nvml) != 0) {
             fprintf(stderr, "[GPUMETRIC] NVML load failed: %s\n", gpumetric_nvml_error());
@@ -27,14 +33,11 @@ int gpumetric_runtime_acquire(const gpumetric_nvml_t **out)
 
         if (ret != NVML_SUCCESS) {
             fprintf(stderr, "[GPUMETRIC] NVML init failed: %s\n", runtime_nvml.ErrorString(ret));
+            int status = ret == NVML_ERROR_LIB_RM_VERSION_MISMATCH ? GPU_METRIC_ERR_DRIVER_MISMATCH : GPU_METRIC_ERR_NVML;
             gpumetric_nvml_unload(&runtime_nvml);
             pthread_mutex_unlock(&runtime_mutex);
-            return GPU_METRIC_ERR_NVML;
+            return status;
         }
-    }
-    if (runtime_refcount == UINT_MAX) {
-        pthread_mutex_unlock(&runtime_mutex);
-        return GPU_METRIC_ERR_NVML;
     }
 
     runtime_refcount++;

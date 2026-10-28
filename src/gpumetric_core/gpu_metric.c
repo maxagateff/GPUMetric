@@ -2,33 +2,33 @@
 
 #include "gpu_metric.h"
 #include "nvml_runtime.h"
+#include "nvml_memory_abi.h"
 
+#include <limits.h>
 #include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stddef.h>
 
-/* NVML_ERROR_NOT_SUPPORTED
- * Historical GPU memory state.
+/*
+ * Per-context memory cache used to calculate
+ * GPU memory consumption deltas between samples.
  */
 typedef struct {
     uint64_t previous_mem_mib;
     int has_previous_sample;
 } MemoryCache;
 
-/*
- * NVML memory information v2 ABI.
- */
-typedef struct {
-    unsigned int version;
-    unsigned long long total;
-    unsigned long long reserved;
-    unsigned long long free;
-    unsigned long long used;
-} GPUMetricMemoryV2;
+_Static_assert(sizeof(GPUMetricMemoryV2) == 40, "Unexpected NVML memory v2 structure size");
+_Static_assert(offsetof(GPUMetricMemoryV2, version) == 0, "Invalid NVML memory v2 version offset");
+_Static_assert(offsetof(GPUMetricMemoryV2, total) == 8, "Invalid NVML memory v2 total offset");
+_Static_assert(offsetof(GPUMetricMemoryV2, reserved) == 16, "Invalid NVML memory v2 reserved offset");
+_Static_assert(offsetof(GPUMetricMemoryV2, free) == 24, "Invalid NVML memory v2 free offset");
+_Static_assert(offsetof(GPUMetricMemoryV2, used) == 32, "Invalid NVML memory v2 used offset");
 
-#define GPUMETRIC_MEMORY_V2_VERSION ((unsigned int)sizeof(GPUMetricMemoryV2) | (2U << 24U))
+_Static_assert(GPUMETRIC_MEMORY_V2_VERSION == 0x02000028U, "Unexpected NVML memory v2 version");
 
 /*
  * Independent GPU context.
@@ -217,10 +217,13 @@ static int gpu_metric_collect(GPUContext *ctx, GPUStats *out) {
     /*
      * Fallback to legacy NVML memory API.
      */
-    if (ret == NVML_ERROR_NOT_SUPPORTED) {
-        if (!nvml->DeviceGetMemoryInfo) {return GPU_METRIC_ERR_NVML;}
+    if (ret == NVML_ERROR_NOT_SUPPORTED || ret == NVML_ERROR_FUNCTION_NOT_FOUND) {
+        if (!nvml->DeviceGetMemoryInfo) return GPU_METRIC_ERR_NVML;
         ret = nvml->DeviceGetMemoryInfo(device, &legacy_mem);
-        if (ret == NVML_SUCCESS) {used_bytes = (uint64_t)legacy_mem.used;}
+        if (ret == NVML_SUCCESS) {
+            used_bytes = (uint64_t)legacy_mem.used;
+            reserved_bytes = 0;
+        }
     }
 
     if (ret != NVML_SUCCESS) {return gpu_metric_nvml_error(ret);}
@@ -235,8 +238,22 @@ static int gpu_metric_collect(GPUContext *ctx, GPUStats *out) {
      * Calculate memory delta.
      */
     int64_t delta_mib = 0;
-    if (ctx->cache.has_previous_sample) {delta_mib = (int64_t)current_mib - (int64_t)ctx->cache.previous_mem_mib;}
+    if (ctx->cache.has_previous_sample) {
+        const uint64_t previous = ctx->cache.previous_mem_mib;
+        if (current_mib >= previous) {
+            const uint64_t difference = current_mib - previous;
+            if (difference > INT64_MAX) return GPU_METRIC_ERR_DEVICE;
 
+            delta_mib = (int64_t)difference;
+        } else {
+            const uint64_t difference = previous - current_mib;
+            const uint64_t negative_limit = (uint64_t)INT64_MAX + 1ULL;
+
+            if (difference > negative_limit) return GPU_METRIC_ERR_DEVICE;
+
+            delta_mib = difference == negative_limit ? INT64_MIN : -(int64_t)difference;
+        }
+    }
     /*
      * Prepare a complete sample before committing it.
      */
@@ -260,8 +277,23 @@ static int gpu_metric_collect(GPUContext *ctx, GPUStats *out) {
 }
 
 
-/*
- * Sample metrics from a specific GPU context.
+/**
+ * @brief Samples metrics from a specific GPU context.
+ *
+ * Multiple threads may sample the same context concurrently.
+ * Sampling is serialized by the context mutex.
+ *
+ * The caller must ensure that the context remains alive
+ * throughout the entire operation.
+ *
+ * Concurrent sampling and destruction of the same context
+ * is not supported.
+ *
+ * On failure, the output structure and memory cache remain unchanged.
+ *
+ * @param ctx Initialized GPU context.
+ * @param out Receives the sampled GPU metrics.
+ * @return GPU_METRIC_SUCCESS on success, negative error code otherwise.
  */
 int gpu_metric_context_sample(GPUContext *ctx, GPUStats *out) {
     if (!ctx || !out) {return GPU_METRIC_ERR_ARGUMENT;}
@@ -273,11 +305,21 @@ int gpu_metric_context_sample(GPUContext *ctx, GPUStats *out) {
 }
 
 
-/*
- * Destroy a GPU context.
+/**
+ * @brief Releases a GPU context and its NVML runtime reference.
  *
- * The caller must ensure that no other thread
- * is using this context.
+ * The caller must ensure that no thread is sampling
+ * or otherwise accessing this context.
+ *
+ * Destroying different contexts concurrently is supported.
+ *
+ * Calling this function with NULL is safe.
+ *
+ * The context pointer becomes invalid after destruction.
+ * Calling destroy twice on the same non-NULL pointer
+ * results in undefined behavior.
+ *
+ * @param ctx GPU context to destroy, or NULL.
  */
 void gpu_metric_context_destroy(GPUContext *ctx) {
     if (!ctx) return;
@@ -318,6 +360,7 @@ int gpu_metric_init(unsigned int device_index) {
  * Legacy sampling API.
  */
 int gpu_metric_sample(GPUStats *out) {
+    if (!out) return GPU_METRIC_ERR_ARGUMENT;
     if (pthread_mutex_lock(&legacy_mutex) != 0) {return GPU_METRIC_ERR_NVML;}
 
     if (!legacy_context) {

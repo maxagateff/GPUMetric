@@ -12,6 +12,20 @@ static nvmlReturn_t temperature_failure = NVML_SUCCESS;
 static nvmlReturn_t utilization_failure = NVML_SUCCESS;
 static nvmlReturn_t memory_failure = NVML_SUCCESS;
 
+static nvmlReturn_t memory_v2_failure = NVML_SUCCESS;
+static unsigned int memory_v1_calls = 0;
+static unsigned int memory_v2_calls = 0;
+
+typedef struct {
+    unsigned int version;
+    unsigned long long total;
+    unsigned long long reserved;
+    unsigned long long free;
+    unsigned long long used;
+} MockMemoryV2;
+
+#define MOCK_MEMORY_V2_VERSION ((unsigned int)sizeof(MockMemoryV2) | (2U << 24U))
+
 static unsigned int init_calls = 0;
 static unsigned int shutdown_calls = 0;
 
@@ -19,6 +33,10 @@ void mock_nvml_set_init_failure(nvmlReturn_t value) {init_failure = value;}
 void mock_nvml_set_temperature_failure(nvmlReturn_t value) {temperature_failure = value;}
 void mock_nvml_set_utilization_failure(nvmlReturn_t value) {utilization_failure = value;}
 void mock_nvml_set_memory_failure(nvmlReturn_t value) {memory_failure = value;}
+
+void mock_nvml_set_memory_v2_failure(nvmlReturn_t value) {memory_v2_failure = value;}
+unsigned int mock_nvml_memory_v1_calls(void) {return memory_v1_calls;}
+unsigned int mock_nvml_memory_v2_calls(void) {return memory_v2_calls;}
 
 unsigned int mock_nvml_init_calls(void) {return init_calls;}
 unsigned int mock_nvml_shutdown_calls(void) {return shutdown_calls;}
@@ -28,6 +46,7 @@ void mock_nvml_reset_failures(void) {
     temperature_failure = NVML_SUCCESS;
     utilization_failure = NVML_SUCCESS;
     memory_failure = NVML_SUCCESS;
+    memory_v2_failure = NVML_SUCCESS;
 }
 
 typedef struct {
@@ -36,13 +55,16 @@ typedef struct {
     unsigned int temperature;
     unsigned int utilization;
     unsigned long long memory_used;
+    unsigned long long memory_reserved;
 } MockDevice;
 
 //
 static MockDevice devices[MOCK_GPU_COUNT] = {
-    {0, "GPU-MOCK-0000", 65, 80, 1024ULL * 1024 * 1024},
-    {1, "GPU-MOCK-0001", 70, 90, 2048ULL * 1024 * 1024}
+    {0, "GPU-MOCK-0000", 65, 80, 1024ULL * 1024 * 1024, 0},
+    {1, "GPU-MOCK-0001", 70, 90, 2048ULL * 1024 * 1024, 0}
 };
+
+void mock_nvml_set_memory_reserved(unsigned int index, unsigned long long bytes) {if (index < MOCK_GPU_COUNT) devices[index].memory_reserved = bytes;}
 
 nvmlReturn_t nvmlInit_v2(void) {
     init_calls++;
@@ -83,10 +105,24 @@ nvmlReturn_t nvmlDeviceGetHandleByUUID(const char *uuid, nvmlDevice_t *device) {
 
 nvmlReturn_t nvmlDeviceGetMemoryInfo(nvmlDevice_t device, nvmlMemory_t *memory) {
     if (!initialized || !device || !memory) return NVML_ERROR_NOT_SUPPORTED;
+    memory_v1_calls++;
     if (memory_failure != NVML_SUCCESS) return memory_failure;
     unsigned int index = ((MockDevice *)device)->index;
     memory->total = 8ULL * 1024 * 1024 * 1024;
     memory->used = devices[index].memory_used;
+    memory->free = memory->total - memory->used;
+    return NVML_SUCCESS;
+}
+
+nvmlReturn_t nvmlDeviceGetMemoryInfo_v2(nvmlDevice_t device, MockMemoryV2 *memory) {
+    if (!initialized || !device || !memory) return NVML_ERROR_NOT_SUPPORTED;
+    memory_v2_calls++;
+    if (memory_v2_failure != NVML_SUCCESS) return memory_v2_failure;
+    if (memory->version != MOCK_MEMORY_V2_VERSION) return NVML_ERROR_NOT_SUPPORTED;
+    unsigned int index = ((MockDevice *)device)->index;
+    memory->total = 8ULL * 1024 * 1024 * 1024;
+    memory->used = devices[index].memory_used;
+    memory->reserved = devices[index].memory_reserved;
     memory->free = memory->total - memory->used;
     return NVML_SUCCESS;
 }
