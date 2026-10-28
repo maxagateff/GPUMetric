@@ -103,7 +103,7 @@ nvmlReturn_t nvmlDeviceGetUtilizationRates(nvmlDevice_t device, nvmlUtilization_
 nvmlReturn_t nvmlDeviceGetTemperature(nvmlDevice_t device, nvmlTemperatureSensors_t sensor, unsigned int *temperature) {
     (void)sensor;
     if (!initialized || !device || !temperature) return NVML_ERROR_NOT_SUPPORTED;
-    if (temperature_failure != NVML_SUCCES) return temperature_failure;
+    if (temperature_failure != NVML_SUCCESS) return temperature_failure;
     unsigned int index = ((MockDevice *)device)->index;
     *temperature = devices[index].temperature;
     return NVML_SUCCESS;
