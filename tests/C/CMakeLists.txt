@@ -64,3 +64,21 @@ if(GPUMETRIC_NVML_INCLUDE_DIR)
 else()
     message(STATUS "NVIDIA NVML headers not found: skipping MemoryInfo v2 ABI test")
 endif()
+
+# ---------------------------------------------------------
+# Real NVIDIA GPU integration test
+# ---------------------------------------------------------
+
+option(GPUMETRIC_TEST_REAL_GPU "Build integration tests requiring a real NVIDIA GPU" OFF)
+
+if(GPUMETRIC_TEST_REAL_GPU)
+    if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        message(FATAL_ERROR "Real NVIDIA GPU tests require Linux")
+    endif()
+
+    add_executable(test_gpu_real test_gpu_real.c)
+    target_include_directories(test_gpu_real PRIVATE ${PROJECT_SOURCE_DIR}/src/gpumetric_core)
+    target_link_libraries(test_gpu_real PRIVATE gpumetric)
+    add_test(NAME gpu_real COMMAND test_gpu_real ${GPUMETRIC_REAL_GPU_INDEX} ${GPUMETRIC_REAL_GPU_UUID})
+    set_tests_properties(gpu_real PROPERTIES LABELS "integration;gpu")
+endif()
